@@ -1,9 +1,9 @@
 // ===== 실시간 판독 =====
 // 현재 카메라 프레임에서 가마의 영역을 잘라 7세그먼트 판독, 기록 화면에 현재 인식값·신뢰도 표시
 
-import { READ_MAX_W, CONF_HIGH, CONF_LOW } from './config.js?v=0.3.0';
-import { roiToSource, frameBlockReason } from './roi.js?v=0.3.0';
-import { recognize } from './recognizer.js?v=0.3.0';
+import { READ_MAX_W, CONF_HIGH, CONF_LOW } from './config.js?v=0.3.1';
+import { roiToSource, frameBlockReason } from './roi.js?v=0.3.1';
+import { recognize } from './recognizer.js?v=0.3.1';
 
 /**
  * 현재 프레임 판독
@@ -49,9 +49,8 @@ export function createLiveDisplay(els) {
       delete els.liveConf.dataset.level;
     }
 
-    const why = ok ? '' : (reason || (result && result.reason) || '');
-    els.liveReason.textContent = why;
-    els.liveReason.hidden = !why;
+    // 이유 줄은 비워 둘 뿐 숨기지 않음: 줄이 생겼다 없어지면 아래 카메라 영상이 밀려 확대/이동 중인 손가락 아래에서 움직임
+    els.liveReason.textContent = ok ? '' : (reason || (result && result.reason) || '');
   }
 
   return { show };

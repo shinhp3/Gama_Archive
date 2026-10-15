@@ -1,14 +1,16 @@
 // ===== 판독 보정 패널 =====
-// 가마별 판독 설정(빨간 LED 모드, 숫자 극성, 임계값 보정, 기울기, 켜짐 기준)을 바꾸고,
+// 가마별 판독 설정(자릿수 폭/높이 비율, 빨간 LED 모드, 숫자 극성, 임계값 보정, 기울기, 켜짐 기준)을 바꾸고,
 // 가마 표시창의 실제 숫자와 인식 결과를 자릿수·세그먼트별로 비교해 보여 줌
 
 import {
-  SEGMENTS, THRESHOLD_OFFSET_LIMIT, SHEAR_LIMIT, MIN_SEG_ON_RATIO, MAX_SEG_ON_RATIO
-} from './config.js?v=0.3.0';
-import { confidenceText, confidenceLevel } from './reading.js?v=0.3.0';
+  SEGMENTS, THRESHOLD_OFFSET_LIMIT, SHEAR_LIMIT, MIN_SEG_ON_RATIO, MAX_SEG_ON_RATIO,
+  DEFAULT_DIGIT_ASPECT, MIN_DIGIT_ASPECT, MAX_DIGIT_ASPECT
+} from './config.js?v=0.3.1';
+import { confidenceText, confidenceLevel } from './reading.js?v=0.3.1';
 
 function clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
 
+function fmtAspect(v) { return v.toFixed(2); }
 function fmtSigned(v) { return (v > 0 ? '+' : '') + v; }
 function fmtShear(v) { return fmtSigned(Math.round(v * 10) / 10) + '°'; }
 function fmtPercent(v) { return Math.round(v * 100) + '%'; }
@@ -40,6 +42,8 @@ export function createCalibrationPanel(els, deps) {
   function render() {
     const k = deps.getKiln();
     if (!k) return;
+    els.digitAspectInput.value = String(k.digitAspect);
+    els.digitAspectValue.textContent = fmtAspect(k.digitAspect);
     els.redLedInput.checked = !!k.redLedMode;
     els.polaritySelect.value = k.polarity;
     els.thresholdInput.value = String(k.thresholdOffset);
@@ -58,6 +62,8 @@ export function createCalibrationPanel(els, deps) {
   }
 
   function bindEvents() {
+    els.digitAspectInput.min = String(MIN_DIGIT_ASPECT);
+    els.digitAspectInput.max = String(MAX_DIGIT_ASPECT);
     els.thresholdInput.min = String(-THRESHOLD_OFFSET_LIMIT);
     els.thresholdInput.max = String(THRESHOLD_OFFSET_LIMIT);
     els.shearInput.min = String(-SHEAR_LIMIT);
@@ -72,6 +78,10 @@ export function createCalibrationPanel(els, deps) {
       change({ polarity: els.polaritySelect.value === 'dark' ? 'dark' : 'bright' });
     });
     // 슬라이더는 움직이는 동안 계속 바뀌므로 잠시 모았다가 저장 (soon)
+    els.digitAspectInput.addEventListener('input', () => {
+      const v = parseFloat(els.digitAspectInput.value);
+      change({ digitAspect: clamp(isFinite(v) ? v : DEFAULT_DIGIT_ASPECT, MIN_DIGIT_ASPECT, MAX_DIGIT_ASPECT) }, true);
+    });
     els.thresholdInput.addEventListener('input', () => {
       const v = Math.round(clamp(parseFloat(els.thresholdInput.value) || 0, -THRESHOLD_OFFSET_LIMIT, THRESHOLD_OFFSET_LIMIT));
       change({ thresholdOffset: v }, true);

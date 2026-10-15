@@ -259,8 +259,13 @@ select { -webkit-appearance: none; appearance: none; padding-right: 40px;
 }
 .reading-reason {
   margin: 8px 0 0;
+  min-height: 1.45em;
   font-size: 15px;
   color: var(--muted);
+  /* 한 줄로 고정해 판독 성공/실패에 따라 아래 카메라 영상 위치가 바뀌지 않게 */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 /* 신뢰도 색: 높음 초록 / 보통 주황 / 낮음 빨강 */
 .conf[data-level="high"] { color: var(--ok-text); }
@@ -403,22 +408,62 @@ select { -webkit-appearance: none; appearance: none; padding-right: 40px;
   /* 회전/크기 변경 시에도 원본 비율 유지 (여백은 검은색) */
   object-fit: contain;
   background: #000;
+  /* 디지털 확대/이동: 값은 roi.js가 계산해 CSS 변수로 지정 (판독은 원본 프레임에서 하므로 화면 표시만 바뀜) */
+  transform-origin: 0 0;
+  -webkit-transform: translate(var(--view-tx, 0px), var(--view-ty, 0px)) scale(var(--view-zoom, 1));
+  transform: translate(var(--view-tx, 0px), var(--view-ty, 0px)) scale(var(--view-zoom, 1));
+  will-change: transform;
 }
 #overlay {
-  /* 드래그 중 스크롤/확대가 일어나지 않도록 */
+  /* 핀치/드래그 중 페이지 스크롤이나 브라우저 확대가 일어나지 않도록 */
   touch-action: none;
   -webkit-user-select: none;
   user-select: none;
   -webkit-touch-callout: none;
   -webkit-tap-highlight-color: transparent;
-  cursor: crosshair;
+  cursor: grab;
 }
-/* 편집할 수 없을 때(기록 화면)는 영상 위에서도 화면 스크롤 가능 */
+#overlay.grabbing { cursor: grabbing; }
+/* 영역 지정 모드가 아닐 때는 읽기 전용: 영상 위에서도 화면 스크롤 가능 */
 #overlay.readonly { touch-action: auto; cursor: default; }
-/* 마우스 위치에 따른 커서 모양 (영역 안쪽 = 이동, 모서리 = 크기 조정) */
-#overlay.cursor-move { cursor: move; }
-#overlay.cursor-nwse { cursor: nwse-resize; }
-#overlay.cursor-nesw { cursor: nesw-resize; }
+
+/* ===== 확대/이동 보조 조작 ===== */
+.zoom-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.zoom-bar input[type="range"] {
+  flex: 1 1 auto;
+  width: auto;
+  min-width: 80px;
+  min-height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  accent-color: var(--primary);
+}
+.zoom-step { font-size: 26px; font-weight: 600; flex: none; }
+.zoom-value {
+  flex: none;
+  min-width: 52px;
+  text-align: right;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.debug-info {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--btn-bg);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
 
 .placeholder {
   position: absolute;

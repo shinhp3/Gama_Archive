@@ -5,12 +5,13 @@ import {
   PREF_LAST_KILN_ID, MAX_NAME_LENGTH,
   DEFAULT_DIGITS, MIN_DIGITS, MAX_DIGITS,
   READ_INTERVAL_OPTIONS, DEFAULT_READ_INTERVAL_SEC, DEFAULT_POLARITY,
-  THRESHOLD_OFFSET_LIMIT, SHEAR_LIMIT, DEFAULT_SEG_ON_RATIO, MIN_SEG_ON_RATIO, MAX_SEG_ON_RATIO
-} from './config.js?v=0.3.0';
+  THRESHOLD_OFFSET_LIMIT, SHEAR_LIMIT, DEFAULT_SEG_ON_RATIO, MIN_SEG_ON_RATIO, MAX_SEG_ON_RATIO,
+  DEFAULT_DIGIT_ASPECT, MIN_DIGIT_ASPECT, MAX_DIGIT_ASPECT, MIN_ZOOM, MAX_ZOOM
+} from './config.js?v=0.3.1';
 import {
   getKilns, putKiln, deleteKiln, getPref, setPref, removePref,
   readLegacyKilns, clearLegacyKilns
-} from './db.js?v=0.3.0';
+} from './db.js?v=0.3.1';
 
 const SAVE_DELAY_MS = 400; // 슬라이더처럼 값이 연속으로 바뀔 때 모았다가 저장하는 시간
 
@@ -34,6 +35,14 @@ function copyRoi(r) {
   return isValidRoi(r) ? { x: r.x, y: r.y, w: r.w, h: r.h } : null;
 }
 
+// 확대/이동 상태 { zoom, cx, cy } (중심은 원본 프레임 비율)
+function copyView(v) {
+  if (!v || typeof v !== 'object') return null;
+  if (!isNum(v.zoom) || !isNum(v.cx) || !isNum(v.cy)) return null;
+  if (v.zoom < MIN_ZOOM || v.zoom > MAX_ZOOM || v.cx < 0 || v.cx > 1 || v.cy < 0 || v.cy > 1) return null;
+  return { zoom: v.zoom, cx: v.cx, cy: v.cy };
+}
+
 // 저장된 값이 손상됐거나 항목이 빠져 있어도 안전한 값으로 보정
 export function sanitizeKiln(raw) {
   if (!raw || typeof raw !== 'object') return null;
@@ -46,7 +55,9 @@ export function sanitizeKiln(raw) {
     name,
     // 방향별로 저장하던 버전(roiLandscape/roiPortrait)의 영역도 하나로 이어받음
     roi: copyRoi(raw.roi) || copyRoi(raw.roiLandscape) || copyRoi(raw.roiPortrait),
+    view: copyView(raw.view),
     digits,
+    digitAspect: numInRange(raw.digitAspect, MIN_DIGIT_ASPECT, MAX_DIGIT_ASPECT, DEFAULT_DIGIT_ASPECT),
     polarity: raw.polarity === 'dark' ? 'dark' : DEFAULT_POLARITY,
     redLedMode: raw.redLedMode === true,
     thresholdOffset: Math.round(numInRange(raw.thresholdOffset, -THRESHOLD_OFFSET_LIMIT, THRESHOLD_OFFSET_LIMIT, 0)),
@@ -167,15 +178,16 @@ export function createKilnManager(els, hooks) {
     }
   }
 
-  // 모든 가마의 영역을 지움 (화면 방향이 바뀌면 이전 영역은 맞지 않음). 지운 가마가 있으면 true
+  // 모든 가마의 영역과 확대/이동 상태를 지움 (화면 방향이 바뀌면 이전 영역은 맞지 않음). 지운 영역이 있으면 true
   function clearAllRois() {
     flushSave();
-    const changed = kilns.filter((k) => k.roi);
-    changed.forEach((k) => {
+    const hadRoi = kilns.some((k) => k.roi);
+    kilns.filter((k) => k.roi || k.view).forEach((k) => {
       k.roi = null;
+      k.view = null;
       putKiln(k).catch(reportError);
     });
-    return changed.length > 0;
+    return hadRoi;
   }
 
   // ===== 선택 =====

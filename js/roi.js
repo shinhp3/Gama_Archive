@@ -1,17 +1,19 @@
 // ===== 영역(ROI) 지정 =====
-// 오버레이 그리기, 터치/마우스 드래그, 좌표 변환, 영역 확대 미리보기
+// 화면 가운데 고정된 가이드 틀에, 영상을 디지털 확대/이동해 숫자를 맞추는 방식.
+// 틀·오버레이 그리기, 핀치/드래그 조작, 좌표 변환, 영역 확대 미리보기
 
-import { HANDLE_RADIUS, HANDLE_HIT, MIN_ROI_PX, ROI_COLOR, PREVIEW_MAX_W, PREVIEW_MAX_H } from './config.js?v=0.3.0';
+import {
+  ROI_COLOR, PREVIEW_MAX_W, PREVIEW_MAX_H, DEFAULT_DIGITS, DEFAULT_DIGIT_ASPECT,
+  GUIDE_WIDTH_RATIO, GUIDE_MAX_HEIGHT_RATIO, MIN_ZOOM, MAX_ZOOM, ZOOM_STEP
+} from './config.js?v=0.3.1';
 
 function clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
+function round3(v) { return Math.round(v * 1000) / 1000; }
 function round5(v) { return Math.round(v * 100000) / 100000; }
 
-// 커서 모양별 CSS 클래스 (기본 crosshair는 CSS에서 지정)
-const CURSOR_CLASSES = {
-  'move': 'cursor-move',
-  'nwse-resize': 'cursor-nwse',
-  'nesw-resize': 'cursor-nesw'
-};
+const ROI_EPS = 0.0002;    // 저장된 영역이 틀과 이 정도 넘게 어긋나면 틀에 맞춰 다시 저장
+const SLIDER_MAX = 1000;   // 확대 슬라이더 눈금 수 (배율은 로그 눈금)
+const MIN_PINCH_PX = 10;   // 두 손가락 간격이 이보다 좁으면 확대/축소 계산 안 함
 
 // 비율 ROI → 원본 프레임 픽셀 사각형
 export function roiToSource(roi, vw, vh) {
@@ -33,102 +35,196 @@ export function frameBlockReason(kiln, camera) {
   return null;
 }
 
-function localToNorm(p, box) {
-  return { x: (p.x - box.x) / box.w, y: (p.y - box.y) / box.h };
+// ===== 좌표 계산 =====
+// 화면 좌표: 영상 영역(오버레이) 안의 CSS px. 프레임 좌표: video 원본 프레임 기준 비율(0~1)
+// 확대/이동 상태 view = { zoom, cx, cy }: 배율 zoom으로 확대한 영상에서 프레임 위치 (cx, cy)가 틀 가운데(= 영상 영역 가운데)에 옴
+
+// object-fit: contain 으로 배율 1일 때 영상이 그려지는 사각형 (위아래/양옆 여백 포함 계산)
+export function fitBox(cw, ch, vw, vh) {
+  const scale = Math.min(cw / vw, ch / vh);
+  const w = vw * scale;
+  const h = vh * scale;
+  return { x: (cw - w) / 2, y: (ch - h) / 2, w, h };
 }
 
-// 비율 ROI → 오버레이 CSS px 사각형
-function roiToLocal(roi, box) {
+// 가이드 틀 크기: 비율 = 자릿수 × 자릿수 폭/높이 비율, 폭은 영상 영역 폭의 70%, 높이를 넘지 않게
+export function guideSize(cw, ch, digits, digitAspect) {
+  const ratio = digits * digitAspect;
+  let w = cw * GUIDE_WIDTH_RATIO;
+  let h = w / ratio;
+  const maxH = ch * GUIDE_MAX_HEIGHT_RATIO;
+  if (h > maxH) {
+    h = maxH;
+    w = h * ratio;
+  }
+  return { w, h };
+}
+
+// 틀이 영상 밖으로 나가지 않는 최소 배율
+export function minZoom(base, guide) {
+  return Math.max(MIN_ZOOM, guide.w / base.w, guide.h / base.h);
+}
+
+// 배율 범위와 이동 범위(틀이 영상 안에 있도록) 제한
+export function clampView(base, guide, view) {
+  const zoom = clamp(isFinite(view.zoom) ? view.zoom : MIN_ZOOM, minZoom(base, guide), MAX_ZOOM);
+  const hw = guide.w / (base.w * zoom) / 2;
+  const hh = guide.h / (base.h * zoom) / 2;
   return {
-    x: box.x + roi.x * box.w,
-    y: box.y + roi.y * box.h,
-    w: roi.w * box.w,
-    h: roi.h * box.h
+    zoom,
+    cx: clamp(isFinite(view.cx) ? view.cx : 0.5, hw, 1 - hw),
+    cy: clamp(isFinite(view.cy) ? view.cy : 0.5, hh, 1 - hh)
   };
 }
 
-function clampPoint(p) {
-  return { x: clamp(p.x, 0, 1), y: clamp(p.y, 0, 1) };
-}
-
-function rectFromPoints(a, b) {
+// 확대/이동 상태 → 틀이 가리키는 프레임 영역 (비율)
+export function viewToRoi(base, guide, view) {
+  const w = Math.min(1, guide.w / (base.w * view.zoom));
+  const h = Math.min(1, guide.h / (base.h * view.zoom));
   return {
-    x: Math.min(a.x, b.x),
-    y: Math.min(a.y, b.y),
-    w: Math.abs(a.x - b.x),
-    h: Math.abs(a.y - b.y)
+    x: round5(clamp(view.cx - w / 2, 0, 1 - w)),
+    y: round5(clamp(view.cy - h / 2, 0, 1 - h)),
+    w: round5(w),
+    h: round5(h)
   };
 }
 
-// 터치 위치가 모서리 핸들/영역 내부/바깥 중 어디인지 판정
-function hitTest(p, box, roi) {
-  if (!roi) return { type: 'none' };
-  const r = roiToLocal(roi, box);
-  // 각 모서리와, 크기 조정 시 고정될 반대편 모서리(비율 좌표)
-  const corners = [
-    { x: r.x,       y: r.y,       anchor: { x: roi.x + roi.w, y: roi.y + roi.h }, cursor: 'nwse-resize' },
-    { x: r.x + r.w, y: r.y,       anchor: { x: roi.x,         y: roi.y + roi.h }, cursor: 'nesw-resize' },
-    { x: r.x,       y: r.y + r.h, anchor: { x: roi.x + roi.w, y: roi.y },         cursor: 'nesw-resize' },
-    { x: r.x + r.w, y: r.y + r.h, anchor: { x: roi.x,         y: roi.y },         cursor: 'nwse-resize' }
-  ];
-  let best = null;
-  let bestD = Infinity;
-  corners.forEach((c) => {
-    const d = Math.hypot(p.x - c.x, p.y - c.y);
-    if (d < bestD) { bestD = d; best = c; }
-  });
-  if (bestD <= HANDLE_HIT) return { type: 'corner', anchor: best.anchor, cursor: best.cursor };
-  if (p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h) return { type: 'inside', cursor: 'move' };
-  return { type: 'none', cursor: 'crosshair' };
+// 프레임 영역 → 그 영역이 틀 안에 꼭 맞게 들어오는 확대/이동 상태
+export function roiToView(base, guide, roi) {
+  return {
+    zoom: Math.min(guide.w / (base.w * roi.w), guide.h / (base.h * roi.h)),
+    cx: roi.x + roi.w / 2,
+    cy: roi.y + roi.h / 2
+  };
+}
+
+// 확대/이동 상태에서 프레임 전체가 화면에 그려지는 사각형
+export function frameRect(cw, ch, base, view) {
+  const w = base.w * view.zoom;
+  const h = base.h * view.zoom;
+  return { x: cw / 2 - view.cx * w, y: ch / 2 - view.cy * h, w, h };
+}
+
+function roisDiffer(a, b) {
+  return Math.abs(a.x - b.x) > ROI_EPS || Math.abs(a.y - b.y) > ROI_EPS ||
+    Math.abs(a.w - b.w) > ROI_EPS || Math.abs(a.h - b.h) > ROI_EPS;
+}
+
+// 비율 ROI → 화면 사각형 (frame: 프레임 전체가 그려지는 화면 사각형)
+function roiToLocal(roi, frame) {
+  return {
+    x: frame.x + roi.x * frame.w,
+    y: frame.y + roi.y * frame.h,
+    w: roi.w * frame.w,
+    h: roi.h * frame.h
+  };
+}
+
+function midpoint(pts) {
+  let x = 0;
+  let y = 0;
+  pts.forEach((p) => { x += p.x; y += p.y; });
+  return { x: x / pts.length, y: y / pts.length };
+}
+
+function distance(a, b) {
+  return Math.hypot(a.x - b.x, a.y - b.y);
+}
+
+function sliderToZoom(v) {
+  return MIN_ZOOM * Math.pow(MAX_ZOOM / MIN_ZOOM, v / SLIDER_MAX);
+}
+
+function zoomToSlider(z) {
+  return Math.round(Math.log(z / MIN_ZOOM) / Math.log(MAX_ZOOM / MIN_ZOOM) * SLIDER_MAX);
 }
 
 /**
- * @param {{ overlay: HTMLCanvasElement, previewCanvas: HTMLCanvasElement, previewPlaceholder: HTMLElement }} els
- * @param {{ camera: object, getKiln: Function, onMessage: Function, onCommit: Function }} deps
- *   onCommit(roi): 드래그가 끝나 새 영역이 확정될 때
+ * @param {{ video: HTMLVideoElement, overlay: HTMLCanvasElement, previewCanvas: HTMLCanvasElement,
+ *   previewPlaceholder: HTMLElement, zoomBar: HTMLElement, zoomInput: HTMLInputElement, zoomValue: HTMLElement,
+ *   zoomInBtn: HTMLButtonElement, zoomOutBtn: HTMLButtonElement, zoomResetBtn: HTMLButtonElement }} els
+ * @param {{ camera: object, getKiln: Function, onCommit: Function }} deps
+ *   onCommit(patch, soon): 확대/이동이 바뀌어 { view, roi }를 가마 설정에 저장할 때 (soon이면 잠시 모았다가 저장)
  */
 export function createRoiEditor(els, deps) {
-  const { overlay, previewCanvas, previewPlaceholder } = els;
+  const { video, overlay, previewCanvas, previewPlaceholder } = els;
   const { camera } = deps;
   const overlayCtx = overlay.getContext('2d');
   const previewCtx = previewCanvas.getContext('2d');
 
-  let editable = false;     // 영역 편집 가능 여부 (영역 버튼으로 켜고 끔)
-  let drag = null;          // 진행 중인 드래그 정보
-  let drawQueued = false;   // 오버레이 다시 그리기 예약 여부
-  let samples = null;       // 영역 위에 덧그릴 세그먼트 샘플 위치 (판독 보정 중일 때만)
-  let lastVideoW = 0;       // 영상 해상도 변화 감지용 (회전 시 가로/세로가 바뀜)
+  let editable = false;      // 확대/이동 조작 가능 여부 (영역 버튼으로 켜고 끔)
+  let drawQueued = false;    // 오버레이 다시 그리기 예약 여부
+  let samples = null;        // 틀 위에 덧그릴 세그먼트 샘플 위치 (판독 보정 중일 때만)
+  let shown = null;          // 마지막으로 화면에 적용한 { L, view, frame }
+  let gesture = null;        // 진행 중인 핀치/드래그의 기준 { view, mid, dist }
+  const pointers = new Map(); // 화면에 닿아 있는 손가락(포인터) id → 화면 좌표
+  let lastTransform = '';
+  let lastVideoW = 0;        // 영상 해상도 변화 감지용 (회전 시 가로/세로가 바뀜)
   let lastVideoH = 0;
 
-  // object-fit: contain 으로 생기는 여백까지 고려해, 오버레이(CSS px) 안에서 실제 영상이 그려진 사각형을 계산
-  function getVideoBox() {
+  // 지금 화면 크기·영상 해상도·가마 설정으로 정해지는 배치 (카메라가 꺼져 있으면 null)
+  function layout() {
     const cw = overlay.clientWidth;
     const ch = overlay.clientHeight;
     const size = camera.videoSize();
-    const vw = size.width;
-    const vh = size.height;
-    if (!camera.isRunning() || !vw || !vh || !cw || !ch) return null;
-    const scale = Math.min(cw / vw, ch / vh);
-    const w = vw * scale;
-    const h = vh * scale;
-    return { x: (cw - w) / 2, y: (ch - h) / 2, w, h };
-  }
-
-  // 화면 좌표(clientX/Y) → 오버레이 내부 CSS px
-  function clientToLocal(clientX, clientY) {
-    const r = overlay.getBoundingClientRect();
-    return { x: clientX - r.left, y: clientY - r.top };
-  }
-
-  // 드래그 중이면 임시 영역, 아니면 저장된 영역
-  function displayedRoi() {
-    if (drag && drag.moved && drag.roi) return drag.roi;
+    if (!camera.isRunning() || !size.width || !size.height || !cw || !ch) return null;
     const k = deps.getKiln();
-    return k ? k.roi : null;
+    return {
+      cw,
+      ch,
+      base: fitBox(cw, ch, size.width, size.height),
+      guide: guideSize(cw, ch, k ? k.digits : DEFAULT_DIGITS, k ? k.digitAspect : DEFAULT_DIGIT_ASPECT)
+    };
   }
 
-  function cancelDrag() {
-    drag = null;
+  // 보여 줄 확대/이동 상태: 저장된 영역이 있으면 그 영역이 틀에 꼭 맞게(화면 크기가 바뀌어도 같은 숫자가 틀 안에),
+  // 없으면 저장된 상태, 그것도 없으면 최소 배율·가운데
+  function resolveView(L) {
+    const k = deps.getKiln();
+    let v;
+    if (k && k.roi) v = roiToView(L.base, L.guide, k.roi);
+    else if (k && k.view) v = k.view;
+    else v = { zoom: MIN_ZOOM, cx: 0.5, cy: 0.5 };
+    return clampView(L.base, L.guide, v);
+  }
+
+  // 확대/이동 상태와 틀이 가리키는 영역을 가마 설정에 저장
+  function commitView(L, view, soon) {
+    if (!deps.getKiln()) return;
+    deps.onCommit({
+      view: { zoom: round3(view.zoom), cx: round5(view.cx), cy: round5(view.cy) },
+      roi: viewToRoi(L.base, L.guide, view)
+    }, soon);
+  }
+
+  function setVideoTransform(tx, ty, zoom) {
+    const key = tx.toFixed(2) + '|' + ty.toFixed(2) + '|' + zoom.toFixed(4);
+    if (key === lastTransform) return;
+    lastTransform = key;
+    video.style.setProperty('--view-tx', tx.toFixed(2) + 'px');
+    video.style.setProperty('--view-ty', ty.toFixed(2) + 'px');
+    video.style.setProperty('--view-zoom', zoom.toFixed(4));
+  }
+
+  // 영상에 확대/이동 적용. 저장된 영역이 틀과 어긋나 있으면(이전 방식 영역, 자릿수·틀 비율 변경) 틀에 맞춰 다시 저장
+  function applyView() {
+    const L = layout();
+    if (!L) {
+      setVideoTransform(0, 0, 1);
+      shown = null;
+      updateZoomBar(null);
+      return null;
+    }
+    const view = resolveView(L);
+    const k = deps.getKiln();
+    if (k && k.roi && (!k.view || roisDiffer(viewToRoi(L.base, L.guide, view), k.roi))) {
+      commitView(L, view, true);
+    }
+    const frame = frameRect(L.cw, L.ch, L.base, view);
+    setVideoTransform(frame.x - view.zoom * L.base.x, frame.y - view.zoom * L.base.y, view.zoom);
+    shown = { L, view, frame };
+    updateZoomBar(shown);
+    return shown;
   }
 
   // ===== 오버레이 그리기 =====
@@ -155,30 +251,39 @@ export function createRoiEditor(els, deps) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, cw, ch);
 
-    const box = getVideoBox();
-    const roi = displayedRoi();
-    if (!box || !roi) return;
+    const s = applyView();
+    if (!s) return;
+    const k = deps.getKiln();
+    const hasRoi = !!(k && k.roi);
+    const g = {
+      x: (cw - s.L.guide.w) / 2,
+      y: (ch - s.L.guide.h) / 2,
+      w: s.L.guide.w,
+      h: s.L.guide.h
+    };
 
-    const r = roiToLocal(roi, box);
-
-    // 영역 바깥을 살짝 어둡게 해서 지정 영역이 눈에 띄게
+    // 틀 바깥을 반투명하게 어둡게 해서 틀 안을 강조
     ctx.beginPath();
-    ctx.rect(box.x, box.y, box.w, box.h);
-    ctx.rect(r.x, r.y, r.w, r.h);
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+    ctx.rect(0, 0, cw, ch);
+    ctx.rect(g.x, g.y, g.w, g.h);
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
     ctx.fill('evenodd');
 
-    // 테두리: 검은 외곽선 + 노란 선
-    ctx.lineJoin = 'round';
-    ctx.lineWidth = 6;
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
-    ctx.strokeRect(r.x, r.y, r.w, r.h);
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = ROI_COLOR;
-    ctx.strokeRect(r.x, r.y, r.w, r.h);
+    // 자릿수 칸 구분선
+    const digits = k ? k.digits : DEFAULT_DIGITS;
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = 'rgba(255, 212, 0, 0.6)';
+    ctx.beginPath();
+    for (let i = 1; i < digits; i++) {
+      const x = Math.round(g.x + g.w * i / digits) + 0.5;
+      ctx.moveTo(x, g.y);
+      ctx.lineTo(x, g.y + g.h);
+    }
+    ctx.stroke();
 
-    // 세그먼트 샘플 위치 (켜짐 = 초록, 꺼짐 = 흰색). 영역을 옮기는 중에는 위치가 맞지 않으므로 생략
-    if (samples && !(drag && drag.moved)) {
+    // 세그먼트 샘플 위치 (켜짐 = 초록, 꺼짐 = 흰색). 확대/이동 중에는 위치가 맞지 않으므로 생략
+    if (samples && hasRoi && !gesture) {
+      const r = roiToLocal(k.roi, s.frame);
       ctx.lineWidth = 1;
       samples.forEach((q) => {
         ctx.beginPath();
@@ -195,28 +300,24 @@ export function createRoiEditor(els, deps) {
       });
     }
 
-    // 모서리 핸들 (편집 가능할 때만)
-    if (editable) {
-      const pts = [[r.x, r.y], [r.x + r.w, r.y], [r.x, r.y + r.h], [r.x + r.w, r.y + r.h]];
-      pts.forEach((pt) => {
-        ctx.beginPath();
-        ctx.arc(pt[0], pt[1], HANDLE_RADIUS, 0, Math.PI * 2);
-        ctx.fillStyle = ROI_COLOR;
-        ctx.fill();
-        ctx.lineWidth = 2;
-        ctx.strokeStyle = 'rgba(0, 0, 0, 0.8)';
-        ctx.stroke();
-      });
-    }
+    // 테두리: 검은 외곽선 + 노란 선. 영역을 아직 지정하지 않았으면 점선
+    ctx.lineJoin = 'round';
+    ctx.setLineDash(hasRoi ? [] : [12, 8]);
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.7)';
+    ctx.strokeRect(g.x, g.y, g.w, g.h);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = ROI_COLOR;
+    ctx.strokeRect(g.x, g.y, g.w, g.h);
+    ctx.setLineDash([]);
 
-    // 가마 이름 라벨
-    const k = deps.getKiln();
+    // 가마 이름 라벨 (틀 위, 공간이 없으면 틀 아래)
     if (k) {
       ctx.font = '600 15px -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif';
-      const label = k.name;
+      const label = hasRoi ? k.name : k.name + ' · 영역 지정 안 됨';
       const tw = ctx.measureText(label).width;
-      const lx = clamp(r.x, box.x, box.x + box.w - tw - 12);
-      const ly = r.y - 28 >= box.y ? r.y - 28 : r.y + r.h + 6;
+      const lx = clamp(g.x, 4, cw - tw - 16);
+      const ly = g.y - 30 >= 4 ? g.y - 30 : g.y + g.h + 8;
       ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
       ctx.fillRect(lx, ly, tw + 12, 22);
       ctx.fillStyle = ROI_COLOR;
@@ -225,128 +326,162 @@ export function createRoiEditor(els, deps) {
     }
   }
 
-  // ===== 포인터(터치/마우스) 드래그 =====
-  function onPointerDown(e) {
-    if (!editable) return;
-    if (drag) return; // 두 번째 손가락은 무시
-    if (e.pointerType === 'mouse' && e.button !== 0) return;
-
-    const k = deps.getKiln();
-    if (!k) {
-      deps.onMessage('먼저 가마를 추가하세요.', 'error', 4000);
-      return;
-    }
-    const box = getVideoBox();
-    if (!box) {
-      deps.onMessage('먼저 "카메라 시작"을 눌러 영상을 켜세요.', 'error', 4000);
-      return;
-    }
-    e.preventDefault();
-
-    const local = clientToLocal(e.clientX, e.clientY);
-    const p = localToNorm(local, box);
-    const hit = hitTest(local, box, k.roi);
-    let next;
-
-    if (hit.type === 'corner') {
-      // 모서리: 반대편 모서리를 고정하고 크기 조정
-      next = { mode: 'resize', anchor: hit.anchor };
-    } else if (hit.type === 'inside') {
-      // 내부: 이동
-      next = { mode: 'move', start: p, orig: { x: k.roi.x, y: k.roi.y, w: k.roi.w, h: k.roi.h } };
-    } else {
-      // 바깥: 새 영역 그리기
-      next = { mode: 'new', anchor: clampPoint(p) };
-    }
-    next.pointerId = e.pointerId;
-    next.roi = null;
-    next.moved = false;
-    drag = next;
-
-    try { overlay.setPointerCapture(e.pointerId); } catch (err) { /* 무시 */ }
-  }
-
-  function onPointerMove(e) {
-    const d = drag;
-    if (!d) {
-      updateHoverCursor(e);
-      return;
-    }
-    if (e.pointerId !== d.pointerId) return;
-    e.preventDefault();
-
-    const box = getVideoBox();
-    if (!box) return;
-    const p = localToNorm(clientToLocal(e.clientX, e.clientY), box);
-
-    if (d.mode === 'move') {
-      const nx = clamp(d.orig.x + (p.x - d.start.x), 0, 1 - d.orig.w);
-      const ny = clamp(d.orig.y + (p.y - d.start.y), 0, 1 - d.orig.h);
-      d.roi = { x: nx, y: ny, w: d.orig.w, h: d.orig.h };
-    } else {
-      d.roi = rectFromPoints(d.anchor, clampPoint(p));
-    }
-    d.moved = true;
+  // ===== 확대/이동 =====
+  // 화면 갱신 + 저장 (soon이면 잠시 모았다가 저장)
+  function setView(L, view, soon) {
+    commitView(L, view, soon);
     scheduleDraw();
     updatePreview();
   }
 
-  function onPointerUp(e) {
-    const d = drag;
-    if (!d || e.pointerId !== d.pointerId) return;
-    drag = null;
-    try { overlay.releasePointerCapture(e.pointerId); } catch (err) { /* 무시 */ }
-
-    const k = deps.getKiln();
-    const box = getVideoBox();
-    const cancelled = e.type === 'pointercancel';
-
-    if (!cancelled && k && box && d.moved && d.roi) {
-      if (d.roi.w * box.w < MIN_ROI_PX || d.roi.h * box.h < MIN_ROI_PX) {
-        deps.onMessage('영역이 너무 작습니다. 조금 더 크게 드래그하세요.', 'error', 3000);
-      } else {
-        deps.onCommit({
-          x: round5(d.roi.x),
-          y: round5(d.roi.y),
-          w: round5(d.roi.w),
-          h: round5(d.roi.h)
-        });
-      }
-    }
-    scheduleDraw();
-  }
-
-  function setCursor(cursor) {
-    Object.keys(CURSOR_CLASSES).forEach((key) => {
-      overlay.classList.toggle(CURSOR_CLASSES[key], key === cursor);
+  // 기준 상태 start에서 화면의 점 anchor 아래 있던 프레임 위치가 화면의 점 to 아래로 오도록 배율 zoom으로 확대/이동
+  function zoomAround(L, start, anchor, to, zoom) {
+    const u = start.cx + (anchor.x - L.cw / 2) / (L.base.w * start.zoom);
+    const v = start.cy + (anchor.y - L.ch / 2) / (L.base.h * start.zoom);
+    const z = clamp(zoom, minZoom(L.base, L.guide), MAX_ZOOM);
+    return clampView(L.base, L.guide, {
+      zoom: z,
+      cx: u - (to.x - L.cw / 2) / (L.base.w * z),
+      cy: v - (to.y - L.ch / 2) / (L.base.h * z)
     });
   }
 
-  // 마우스 사용 시 위치에 따라 커서 모양 변경
-  function updateHoverCursor(e) {
-    if (e.pointerType !== 'mouse' || !editable) return;
-    const k = deps.getKiln();
-    const box = getVideoBox();
-    let cursor = 'crosshair';
-    if (k && box && k.roi) {
-      cursor = hitTest(clientToLocal(e.clientX, e.clientY), box, k.roi).cursor;
-    }
-    setCursor(cursor);
+  // 틀 가운데를 기준으로 배율만 바꿈 (슬라이더, +/- 버튼)
+  function zoomTo(zoom, soon) {
+    const L = layout();
+    if (!L) return;
+    const v = resolveView(L);
+    setView(L, clampView(L.base, L.guide, { zoom, cx: v.cx, cy: v.cy }), soon);
   }
 
-  // 편집 가능 여부 전환. 편집 불가일 때는 영상 위 터치로 화면 스크롤이 되도록 readonly 클래스 지정
+  function zoomBy(factor) {
+    const L = layout();
+    if (!L) return;
+    zoomTo(resolveView(L).zoom * factor, false);
+  }
+
+  // 최소 배율, 가운데
+  function resetView() {
+    const L = layout();
+    if (!L) return;
+    setView(L, clampView(L.base, L.guide, { zoom: MIN_ZOOM, cx: 0.5, cy: 0.5 }), false);
+  }
+
+  function updateZoomBar(s) {
+    if (!s) {
+      els.zoomValue.textContent = '—';
+      return;
+    }
+    const z = s.view.zoom;
+    els.zoomValue.textContent = z.toFixed(1) + '배';
+    // 슬라이더를 움직이는 중에는 값이 거의 같으므로 건드리지 않음 (손가락 아래에서 튀지 않게)
+    if (Math.abs(sliderToZoom(parseFloat(els.zoomInput.value) || 0) - z) > z * 0.01) {
+      els.zoomInput.value = String(zoomToSlider(z));
+    }
+    els.zoomOutBtn.disabled = z <= minZoom(s.L.base, s.L.guide) + 0.001;
+    els.zoomInBtn.disabled = z >= MAX_ZOOM - 0.001;
+  }
+
+  // ===== 핀치/드래그 (pointer events) =====
+  function localPoint(e) {
+    const r = overlay.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  }
+
+  function activePoints() {
+    return Array.from(pointers.values()).slice(0, 2);
+  }
+
+  // 손가락 수가 바뀔 때마다 기준(현재 상태, 손가락 중심, 손가락 간격)을 다시 잡아 화면이 튀지 않게 함
+  function restartGesture() {
+    const pts = activePoints();
+    const L = layout();
+    if (!pts.length || !L) {
+      gesture = null;
+      return;
+    }
+    gesture = {
+      view: resolveView(L),
+      mid: midpoint(pts),
+      dist: pts.length > 1 ? distance(pts[0], pts[1]) : 0
+    };
+  }
+
+  function onPointerDown(e) {
+    if (!editable) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (!layout() || !deps.getKiln()) return;
+    e.preventDefault();
+    pointers.set(e.pointerId, localPoint(e));
+    try { overlay.setPointerCapture(e.pointerId); } catch (err) { /* 무시 */ }
+    restartGesture();
+    overlay.classList.add('grabbing');
+  }
+
+  function onPointerMove(e) {
+    if (!gesture || !pointers.has(e.pointerId)) return;
+    e.preventDefault();
+    pointers.set(e.pointerId, localPoint(e));
+    const L = layout();
+    if (!L) return;
+    const pts = activePoints();
+    let zoom = gesture.view.zoom;
+    if (pts.length > 1 && gesture.dist > MIN_PINCH_PX) {
+      zoom *= distance(pts[0], pts[1]) / gesture.dist;
+    }
+    setView(L, zoomAround(L, gesture.view, gesture.mid, midpoint(pts), zoom), true);
+  }
+
+  function onPointerUp(e) {
+    if (!pointers.has(e.pointerId)) return;
+    pointers.delete(e.pointerId);
+    try { overlay.releasePointerCapture(e.pointerId); } catch (err) { /* 무시 */ }
+    restartGesture();
+    if (!gesture) {
+      overlay.classList.remove('grabbing');
+      scheduleDraw();
+    }
+  }
+
+  // 마우스 휠 확대/축소 (PC에서 확인할 때)
+  function onWheel(e) {
+    if (!editable) return;
+    const L = layout();
+    if (!L) return;
+    e.preventDefault();
+    const p = localPoint(e);
+    const start = resolveView(L);
+    setView(L, zoomAround(L, start, p, p, start.zoom * Math.exp(-e.deltaY * 0.0015)), true);
+  }
+
+  function cancelGesture() {
+    pointers.clear();
+    gesture = null;
+    overlay.classList.remove('grabbing');
+  }
+
+  // 조작 가능 여부 전환. 조작할 수 없을 때는 영상 위 터치로 화면 스크롤이 되도록 readonly 클래스 지정
   function setEditable(flag) {
     editable = !!flag;
-    if (!editable) {
-      drag = null;
-      setCursor(null);
-    }
+    cancelGesture();
     overlay.classList.toggle('readonly', !editable);
+    els.zoomBar.hidden = !editable;
+    if (editable) {
+      // 조작을 시작하면 지금 틀이 가리키는 곳을 바로 영역으로 지정
+      const L = layout();
+      if (L) commitView(L, resolveView(L), false);
+    }
     scheduleDraw();
+    updatePreview();
   }
 
   function isEditable() {
     return editable;
+  }
+
+  // 지금 화면에 적용된 확대/이동 상태 (카메라가 꺼져 있으면 null)
+  function currentView() {
+    return shown ? shown.view : null;
   }
 
   // 세그먼트 샘플 위치 지정 (null이면 그리지 않음). pts는 영역 기준 비율 좌표
@@ -362,7 +497,7 @@ export function createRoiEditor(els, deps) {
     const vw = size.width;
     const vh = size.height;
 
-    // 회전 등으로 영상 해상도가 바뀌면 오버레이도 다시 그림
+    // 회전 등으로 영상 해상도가 바뀌면 틀과 확대 상태도 다시 계산
     if (vw !== lastVideoW || vh !== lastVideoH) {
       lastVideoW = vw;
       lastVideoH = vh;
@@ -378,7 +513,7 @@ export function createRoiEditor(els, deps) {
       return;
     }
 
-    const src = roiToSource(displayedRoi(), vw, vh);
+    const src = roiToSource(k.roi, vw, vh);
 
     // 영역 비율을 유지한 채 확대
     const scale = Math.min(PREVIEW_MAX_W / src.w, PREVIEW_MAX_H / src.h);
@@ -397,14 +532,37 @@ export function createRoiEditor(els, deps) {
     previewPlaceholder.hidden = true;
   }
 
+  function bindEvents() {
+    overlay.addEventListener('pointerdown', onPointerDown);
+    overlay.addEventListener('pointermove', onPointerMove);
+    overlay.addEventListener('pointerup', onPointerUp);
+    overlay.addEventListener('pointercancel', onPointerUp);
+    overlay.addEventListener('wheel', onWheel, { passive: false });
+    // touch-action을 지원하지 않는 구형 iOS 대비: 조작 중에는 영상 위 터치 스크롤/브라우저 확대 차단
+    const blockWhileEditing = (e) => { if (editable) e.preventDefault(); };
+    overlay.addEventListener('touchmove', blockWhileEditing, { passive: false });
+    overlay.addEventListener('gesturestart', blockWhileEditing);
+    overlay.addEventListener('gesturechange', blockWhileEditing);
+    overlay.addEventListener('contextmenu', (e) => { e.preventDefault(); });
+
+    els.zoomInput.min = '0';
+    els.zoomInput.max = String(SLIDER_MAX);
+    els.zoomInput.addEventListener('input', () => {
+      zoomTo(sliderToZoom(parseFloat(els.zoomInput.value) || 0), true);
+    });
+    els.zoomInBtn.addEventListener('click', () => zoomBy(ZOOM_STEP));
+    els.zoomOutBtn.addEventListener('click', () => zoomBy(1 / ZOOM_STEP));
+    els.zoomResetBtn.addEventListener('click', resetView);
+  }
+
+  bindEvents();
+
   return {
     scheduleDraw,
-    cancelDrag,
-    onPointerDown,
-    onPointerMove,
-    onPointerUp,
+    cancelGesture,
     setEditable,
     isEditable,
+    currentView,
     setSamples,
     updatePreview
   };

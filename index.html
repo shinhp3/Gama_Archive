@@ -8,8 +8,8 @@
   <meta name="format-detection" content="telephone=no">
   <title>가마 온도 기록</title>
   <!-- 파일을 바꿀 때마다 ?v= 값을 올려야 아이패드가 예전 파일을 캐시에서 쓰지 않음 (js의 import 경로와 config.js의 APP_VERSION도 같이) -->
-  <link rel="stylesheet" href="css/style.css?v=0.3.0">
-  <script type="module" src="js/main.js?v=0.3.0"></script>
+  <link rel="stylesheet" href="css/style.css?v=0.3.1">
+  <script type="module" src="js/main.js?v=0.3.1"></script>
 </head>
 <body>
   <div class="page">
@@ -25,7 +25,7 @@
           <div class="card-head">
             <h2>카메라</h2>
             <div class="head-actions">
-              <!-- 영역 지정 모드 켜기/끄기 -->
+              <!-- 영역 지정(영상 확대/이동) 모드 켜기/끄기 -->
               <button id="roiEditBtn" type="button" class="icon-btn" aria-label="영역 지정" aria-pressed="false" title="영역 지정" disabled>
                 <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                   <path d="M3 8V4a1 1 0 0 1 1-1h4M16 3h4a1 1 0 0 1 1 1v4M21 16v4a1 1 0 0 1-1 1h-4M8 21H4a1 1 0 0 1-1-1v-4"/>
@@ -40,6 +40,15 @@
             <canvas id="overlay" class="readonly"></canvas>
             <div id="videoPlaceholder" class="placeholder">카메라 꺼짐</div>
           </div>
+          <!-- 확대/이동 보조 조작 (영역 지정 모드에서만 표시) -->
+          <div id="zoomBar" class="zoom-bar" hidden>
+            <button id="zoomOutBtn" type="button" class="icon-btn zoom-step" aria-label="축소">−</button>
+            <input id="zoomInput" type="range" step="1" value="0" aria-label="확대 배율">
+            <button id="zoomInBtn" type="button" class="icon-btn zoom-step" aria-label="확대">+</button>
+            <output id="zoomValue" class="zoom-value">—</output>
+            <button id="zoomResetBtn" type="button">초기화</button>
+          </div>
+          <pre id="debugInfo" class="debug-info" hidden></pre>
           <div class="preview-box">
             <canvas id="previewCanvas" hidden></canvas>
             <div id="previewPlaceholder" class="placeholder"></div>
@@ -94,7 +103,7 @@
             <span class="status-label">신뢰도</span>
             <strong id="liveConf" class="conf">—</strong>
           </div>
-          <p id="liveReason" class="reading-reason" hidden></p>
+          <p id="liveReason" class="reading-reason"></p>
         </section>
       </aside>
 
@@ -104,6 +113,10 @@
           <label class="field">
             <span class="field-label">숫자 자릿수</span>
             <select id="digitsSelect"></select>
+          </label>
+          <label class="range-field">
+            <span class="range-head"><span class="field-label">자릿수 폭/높이 비율 (노란 틀 모양)</span><output id="digitAspectValue">0.60</output></span>
+            <input id="digitAspectInput" type="range" step="0.05" value="0.6">
           </label>
           <label class="field">
             <span class="field-label">판독 주기</span>

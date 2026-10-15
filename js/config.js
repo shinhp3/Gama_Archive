@@ -1,6 +1,6 @@
 // ===== 앱 전체에서 쓰는 상수 =====
 
-export const APP_VERSION = 'v0.3.0';
+export const APP_VERSION = 'v0.3.1';
 
 // ===== 저장소 =====
 export const DB_NAME = 'kiln-recorder';
@@ -26,11 +26,20 @@ export const DEFAULT_SEG_ON_RATIO = 0.4;      // 세그먼트 켜짐 기준 (켜
 export const MIN_SEG_ON_RATIO = 0.1;
 export const MAX_SEG_ON_RATIO = 0.9;
 
-// ===== 영역(ROI) 지정 화면 =====
-export const HANDLE_RADIUS = 12;       // 모서리 핸들 그리기 반지름 (CSS px)
-export const HANDLE_HIT = 34;          // 모서리 핸들 터치 판정 반경 (CSS px, 손가락 기준으로 넉넉하게)
-export const MIN_ROI_PX = 16;          // 화면에서 허용하는 최소 영역 크기 (CSS px)
-export const ROI_COLOR = '#ffd400';    // 영역 테두리 색 (밝은/어두운 영상 모두에서 잘 보이도록 노란색 + 검은 외곽선)
+// ===== 카메라 =====
+export const CAMERA_IDEAL_W = 1920;    // 후면 카메라 요청 해상도 (지원하지 않으면 해상도 조건 없이 다시 요청)
+export const CAMERA_IDEAL_H = 1080;
+
+// ===== 영역(ROI) 지정 화면: 고정된 가이드 틀 + 영상 확대/이동 =====
+export const DEFAULT_DIGIT_ASPECT = 0.6;     // 자릿수 한 칸의 폭/높이 비율 (틀 비율 = 자릿수 × 이 값)
+export const MIN_DIGIT_ASPECT = 0.3;
+export const MAX_DIGIT_ASPECT = 1.2;
+export const GUIDE_WIDTH_RATIO = 0.7;        // 틀 폭 = 영상 영역 폭의 70%
+export const GUIDE_MAX_HEIGHT_RATIO = 0.9;   // 틀 높이는 영상 영역 높이의 90%를 넘지 않게
+export const MIN_ZOOM = 1;                   // 디지털 확대 배율 범위
+export const MAX_ZOOM = 10;
+export const ZOOM_STEP = 1.25;               // [+] [-] 버튼 한 번에 바뀌는 배율
+export const ROI_COLOR = '#ffd400';    // 틀 테두리 색 (밝은/어두운 영상 모두에서 잘 보이도록 노란색 + 검은 외곽선)
 export const PREVIEW_INTERVAL_MS = 1000; // 영역 확대 미리보기 갱신 주기
 export const PREVIEW_MAX_W = 800;      // 영역 확대 미리보기 최대 크기 (캔버스 내부 해상도)
 export const PREVIEW_MAX_H = 300;

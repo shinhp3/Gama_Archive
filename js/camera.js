@@ -1,6 +1,10 @@
 // ===== 카메라 =====
 // 후면 카메라 스트림 시작/중지, 영상 프레임에서 원하는 영역을 잘라내기
 
+import { CAMERA_IDEAL_W, CAMERA_IDEAL_H } from './config.js?v=0.3.1';
+
+const PERMISSION_ERRORS = ['NotAllowedError', 'PermissionDeniedError', 'SecurityError'];
+
 function cameraErrorMessage(err) {
   const name = err && err.name ? err.name : '';
   switch (name) {
@@ -80,18 +84,16 @@ export function createCamera(els, hooks) {
       audio: false,
       video: {
         facingMode: { ideal: 'environment' },
-        width: { ideal: 1920 },
-        height: { ideal: 1080 }
+        width: { ideal: CAMERA_IDEAL_W },
+        height: { ideal: CAMERA_IDEAL_H }
       }
     };
 
     navigator.mediaDevices.getUserMedia(constraints)
       .catch((err) => {
-        // 해상도 조건 때문에 실패하면 최소 조건으로 한 번 더 시도
-        if (err && (err.name === 'OverconstrainedError' || err.name === 'ConstraintNotSatisfiedError')) {
-          return navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: 'environment' } });
-        }
-        throw err;
+        // 권한 거부가 아니면 해상도 조건 없이 한 번 더 시도
+        if (err && PERMISSION_ERRORS.indexOf(err.name) >= 0) throw err;
+        return navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' } } });
       })
       .then((s) => {
         stream = s;
@@ -141,6 +143,18 @@ export function createCamera(els, hooks) {
     return { width: video.videoWidth, height: video.videoHeight };
   }
 
+  // 카메라가 실제로 준 설정 (해상도, 프레임 속도). 확인할 수 없으면 null
+  function trackSettings() {
+    if (!stream) return null;
+    const track = stream.getVideoTracks()[0];
+    if (!track || typeof track.getSettings !== 'function') return null;
+    try {
+      return track.getSettings();
+    } catch (e) {
+      return null;
+    }
+  }
+
   // 프레임을 읽을 수 있는 상태인지
   function isFrameReady() {
     return !!stream && !!video.videoWidth && !!video.videoHeight && video.readyState >= 2;
@@ -169,5 +183,5 @@ export function createCamera(els, hooks) {
     }
   }
 
-  return { start, stop, isRunning, videoSize, isFrameReady, resumeIfPaused, drawRegion, grabRegion };
+  return { start, stop, isRunning, videoSize, trackSettings, isFrameReady, resumeIfPaused, drawRegion, grabRegion };
 }
