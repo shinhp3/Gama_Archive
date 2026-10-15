@@ -1,7 +1,7 @@
 // ===== 영역(ROI) 지정 =====
 // 오버레이 그리기, 터치/마우스 드래그, 좌표 변환, 영역 확대 미리보기
 
-import { HANDLE_RADIUS, HANDLE_HIT, MIN_ROI_PX, ROI_COLOR, PREVIEW_MAX_W, PREVIEW_MAX_H } from './config.js';
+import { HANDLE_RADIUS, HANDLE_HIT, MIN_ROI_PX, ROI_COLOR, PREVIEW_MAX_W, PREVIEW_MAX_H } from './config.js?v=0.2.1';
 
 function clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
 function round5(v) { return Math.round(v * 100000) / 100000; }

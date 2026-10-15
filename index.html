@@ -7,8 +7,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="format-detection" content="telephone=no">
   <title>가마 온도 기록</title>
-  <link rel="stylesheet" href="css/style.css">
-  <script type="module" src="js/main.js"></script>
+  <!-- 파일을 바꿀 때마다 ?v= 값을 올려야 아이패드가 예전 파일을 캐시에서 쓰지 않음 (js의 import 경로와 config.js의 APP_VERSION도 같이) -->
+  <link rel="stylesheet" href="css/style.css?v=0.2.1">
+  <script type="module" src="js/main.js?v=0.2.1"></script>
 </head>
 <body>
   <div class="page">

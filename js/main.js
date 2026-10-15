@@ -1,11 +1,11 @@
 // ===== 진입점 =====
 // 화면 요소를 찾아 각 모듈을 연결하고, 탭 전환과 이벤트 처리를 담당
 
-import { APP_VERSION, PREVIEW_INTERVAL_MS } from './config.js';
-import { initDb } from './db.js';
-import { createCamera } from './camera.js';
-import { createRoiEditor } from './roi.js';
-import { createKilnManager } from './kilns.js';
+import { APP_VERSION, PREVIEW_INTERVAL_MS } from './config.js?v=0.2.1';
+import { initDb } from './db.js?v=0.2.1';
+import { createCamera } from './camera.js?v=0.2.1';
+import { createRoiEditor } from './roi.js?v=0.2.1';
+import { createKilnManager } from './kilns.js?v=0.2.1';
 
 const TABS = ['record', 'history'];
 const ROI_RESET_MESSAGE = '화면 방향이 바뀌어 영역이 초기화되었습니다. 영역 버튼을 눌러 영역을 다시 지정해 주세요.';
@@ -97,12 +97,24 @@ function startApp() {
     roi.updatePreview();
   }
 
+  // 카메라 영상 프레임 방향 (영상이 없으면 null). iPad는 회전하면 프레임 가로·세로도 바뀜
+  function frameOrientation() {
+    if (!camera.isFrameReady()) return null;
+    const size = camera.videoSize();
+    return size.width >= size.height ? 'landscape' : 'portrait';
+  }
+
   // 화면이 자동 회전으로 가로↔세로 바뀌면 지정해 둔 영역을 초기화하고 다시 지정하라고 안내
-  let lastOrientation = screenOrientation();
+  // 화면 방향 또는 영상 프레임 방향 중 하나라도 바뀌면 회전으로 봄
+  let lastScreen = screenOrientation();
+  let lastFrame = frameOrientation();
   function checkOrientation() {
-    const now = screenOrientation();
-    if (now === lastOrientation) return;
-    lastOrientation = now;
+    const screenNow = screenOrientation();
+    const frameNow = frameOrientation();
+    const rotated = screenNow !== lastScreen || (frameNow && lastFrame && frameNow !== lastFrame);
+    lastScreen = screenNow;
+    if (frameNow) lastFrame = frameNow;
+    if (!rotated) return;
     roi.cancelDrag();
     if (kilns.clearAllRois()) {
       showMessage(ROI_RESET_MESSAGE, 'error');
@@ -236,9 +248,12 @@ function startApp() {
     ov.addEventListener('gesturestart', (e) => { if (roi.isEditable()) e.preventDefault(); });
     ov.addEventListener('contextmenu', (e) => { e.preventDefault(); });
 
-    // 영상 크기 정보가 준비되거나 바뀌면 다시 그림
+    // 영상 크기 정보가 준비되거나 바뀌면(회전 시 프레임 가로·세로가 바뀜) 방향 확인 후 다시 그림
     ['loadedmetadata', 'playing', 'resize'].forEach((ev) => {
-      els.video.addEventListener(ev, refreshCameraView);
+      els.video.addEventListener(ev, () => {
+        checkOrientation();
+        refreshCameraView();
+      });
     });
 
     // 화면 크기/회전 변화 대응 (iOS는 회전 직후 크기·방향 값이 늦게 반영되므로 한 번 더 확인)
@@ -284,8 +299,11 @@ function startApp() {
       showMessage(err && err.message ? err.message : '저장소를 열지 못했습니다.', 'error');
     });
 
-  // 1초마다 영역 확대 미리보기 갱신
-  setInterval(roi.updatePreview, PREVIEW_INTERVAL_MS);
+  // 1초마다 영역 확대 미리보기 갱신. 회전 이벤트가 오지 않는 경우에 대비해 방향도 함께 확인
+  setInterval(() => {
+    checkOrientation();
+    roi.updatePreview();
+  }, PREVIEW_INTERVAL_MS);
 }
 
 startApp();
