@@ -30,8 +30,6 @@ function isValidRoi(r) {
     r.x + r.w <= 1.0001 && r.y + r.h <= 1.0001;
 }
 
-function isOrientation(v) { return v === 'landscape' || v === 'portrait'; }
-
 function copyRoi(r) {
   return isValidRoi(r) ? { x: r.x, y: r.y, w: r.w, h: r.h } : null;
 }
@@ -43,30 +41,11 @@ export function sanitizeKiln(raw) {
   if (!name) return null;
   let digits = parseInt(raw.digits, 10);
   if (!(digits >= MIN_DIGITS && digits <= MAX_DIGITS)) digits = DEFAULT_DIGITS;
-  let roi = copyRoi(raw.roi);
-  let roiOrientation = (roi && isOrientation(raw.roiOrientation)) ? raw.roiOrientation : null;
-  if (!roiOrientation) {
-    // 이전 버전의 방향별 영역(roiLandscape/roiPortrait)은 가로 영역을 우선해 하나로 합침
-    const f = raw.roiFrame;
-    if (copyRoi(raw.roiLandscape)) {
-      roi = copyRoi(raw.roiLandscape);
-      roiOrientation = 'landscape';
-    } else if (copyRoi(raw.roiPortrait)) {
-      roi = copyRoi(raw.roiPortrait);
-      roiOrientation = 'portrait';
-    } else if (roi && f && isNum(f.w) && isNum(f.h) && f.w > 0 && f.h > 0) {
-      roiOrientation = f.w >= f.h ? 'landscape' : 'portrait';
-    }
-  }
-  const roiScreen = roiOrientation ? (isOrientation(raw.roiScreen) ? raw.roiScreen : roiOrientation) : null;
   return {
     id: typeof raw.id === 'string' && raw.id ? raw.id : makeId(),
     name,
-    // 영역 (video 원본 프레임 기준 비율) 과 지정할 때의 영상 프레임/화면 방향.
-    // 방향을 모르는 옛 영역은 카메라가 처음 켜졌을 때의 방향으로 정함 (adoptLegacyRoi)
-    roi,
-    roiOrientation,
-    roiScreen,
+    // 방향별로 저장하던 버전(roiLandscape/roiPortrait)의 영역도 하나로 이어받음
+    roi: copyRoi(raw.roi) || copyRoi(raw.roiLandscape) || copyRoi(raw.roiPortrait),
     digits,
     polarity: raw.polarity === 'dark' ? 'dark' : DEFAULT_POLARITY,
     redLedMode: raw.redLedMode === true,
@@ -186,15 +165,6 @@ export function createKilnManager(els, hooks) {
     } else {
       flushSave();
     }
-  }
-
-  // 지정할 때의 방향을 모르는 옛 영역을 지금 방향(view = { orientation, screen })에서 지정한 것으로 정함
-  // 정했으면 true
-  function adoptLegacyRoi(view) {
-    const k = current();
-    if (!k || !k.roi || k.roiOrientation || !view || !view.orientation) return false;
-    update({ roiOrientation: view.orientation, roiScreen: view.screen });
-    return true;
   }
 
   // ===== 선택 =====
@@ -357,5 +327,5 @@ export function createKilnManager(els, hooks) {
   populateOptions();
   bindEvents();
 
-  return { load, current, update, select, render, adoptLegacyRoi, hasKilns: () => kilns.length > 0 };
+  return { load, current, update, select, render, hasKilns: () => kilns.length > 0 };
 }
