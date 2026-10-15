@@ -167,6 +167,17 @@ export function createKilnManager(els, hooks) {
     }
   }
 
+  // 모든 가마의 영역을 지움 (화면 방향이 바뀌면 이전 영역은 맞지 않음). 지운 가마가 있으면 true
+  function clearAllRois() {
+    flushSave();
+    const changed = kilns.filter((k) => k.roi);
+    changed.forEach((k) => {
+      k.roi = null;
+      putKiln(k).catch(reportError);
+    });
+    return changed.length > 0;
+  }
+
   // ===== 선택 =====
   function select(id) {
     flushSave();
@@ -327,5 +338,5 @@ export function createKilnManager(els, hooks) {
   populateOptions();
   bindEvents();
 
-  return { load, current, update, select, render, hasKilns: () => kilns.length > 0 };
+  return { load, current, update, clearAllRois, select, render, hasKilns: () => kilns.length > 0 };
 }

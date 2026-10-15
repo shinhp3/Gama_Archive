@@ -8,6 +8,15 @@ import { createRoiEditor } from './roi.js';
 import { createKilnManager } from './kilns.js';
 
 const TABS = ['record', 'history'];
+const ROI_RESET_MESSAGE = '화면 방향이 바뀌어 영역이 초기화되었습니다. 영역 버튼을 눌러 영역을 다시 지정해 주세요.';
+
+// 기기 화면 방향. iPad Split View처럼 창 크기만 바뀌는 경우와 구분하려고 기기 방향 정보를 먼저 사용
+function screenOrientation() {
+  const so = window.screen && window.screen.orientation;
+  if (so && typeof so.type === 'string') return so.type.indexOf('portrait') === 0 ? 'portrait' : 'landscape';
+  if (typeof window.orientation === 'number') return Math.abs(window.orientation) === 90 ? 'landscape' : 'portrait';
+  return window.innerWidth >= window.innerHeight ? 'landscape' : 'portrait';
+}
 
 function getElements() {
   const $ = (id) => document.getElementById(id);
@@ -86,6 +95,19 @@ function startApp() {
   function refreshCameraView() {
     roi.scheduleDraw();
     roi.updatePreview();
+  }
+
+  // 화면이 자동 회전으로 가로↔세로 바뀌면 지정해 둔 영역을 초기화하고 다시 지정하라고 안내
+  let lastOrientation = screenOrientation();
+  function checkOrientation() {
+    const now = screenOrientation();
+    if (now === lastOrientation) return;
+    lastOrientation = now;
+    roi.cancelDrag();
+    if (kilns.clearAllRois()) {
+      showMessage(ROI_RESET_MESSAGE, 'error');
+    }
+    refreshCameraView();
   }
 
   // ===== 탭 전환 =====
@@ -219,20 +241,29 @@ function startApp() {
       els.video.addEventListener(ev, refreshCameraView);
     });
 
-    // 화면 크기/회전 변화 대응 (iOS는 회전 직후 크기 값이 늦게 반영되므로 한 번 더 그림)
+    // 화면 크기/회전 변화 대응 (iOS는 회전 직후 크기·방향 값이 늦게 반영되므로 한 번 더 확인)
     const onLayoutChange = () => {
+      checkOrientation();
       roi.scheduleDraw();
-      setTimeout(roi.scheduleDraw, 300);
+      setTimeout(() => {
+        checkOrientation();
+        roi.scheduleDraw();
+      }, 300);
     };
     window.addEventListener('resize', onLayoutChange);
     window.addEventListener('orientationchange', onLayoutChange);
+    if (window.screen && window.screen.orientation && typeof window.screen.orientation.addEventListener === 'function') {
+      window.screen.orientation.addEventListener('change', onLayoutChange);
+    }
     if (typeof window.ResizeObserver === 'function') {
       new window.ResizeObserver(() => { roi.scheduleDraw(); }).observe(els.videoWrap);
     }
 
     // 다른 앱에 다녀오면 iOS가 영상을 멈추는 경우가 있어 다시 재생
     document.addEventListener('visibilitychange', () => {
-      if (!document.hidden) camera.resumeIfPaused();
+      if (document.hidden) return;
+      camera.resumeIfPaused();
+      checkOrientation(); // 다른 앱에 있는 동안 회전했을 수 있음
     });
   }
 
