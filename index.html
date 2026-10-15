@@ -2,36 +2,123 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gama Archive</title>
-  <style>
-    body {
-      margin: 0;
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", sans-serif;
-      background: #111;
-      color: #eee;
-    }
-    main {
-      text-align: center;
-    }
-    h1 {
-      margin: 0 0 0.5rem;
-      font-size: 2.5rem;
-    }
-    p {
-      margin: 0;
-      color: #999;
-    }
-  </style>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="format-detection" content="telephone=no">
+  <title>가마 온도 기록</title>
+  <link rel="stylesheet" href="css/style.css">
+  <script type="module" src="js/main.js"></script>
 </head>
 <body>
-  <main>
-    <h1>Gama Archive</h1>
-    <p>준비 중입니다.</p>
-  </main>
+  <div class="page">
+    <!-- 안내/오류 메시지 (스크롤해도 위에 보이도록 고정) -->
+    <div class="sticky-stack">
+      <div id="message" class="message info" role="status" aria-live="polite" hidden></div>
+    </div>
+
+    <!-- ===== 기록 화면 ===== -->
+    <section id="viewRecord" class="view view-record">
+      <div class="record-main" data-camera-slot="record">
+        <!-- 카메라 카드: 현재 탭의 data-camera-slot 위치로 옮겨짐 -->
+        <section id="cameraCard" class="card">
+          <div class="card-head">
+            <h2>카메라</h2>
+            <button id="cameraBtn" type="button" class="primary">카메라 시작</button>
+          </div>
+          <div id="videoWrap" class="video-wrap">
+            <video id="video" playsinline webkit-playsinline muted autoplay></video>
+            <canvas id="overlay" class="readonly"></canvas>
+            <div id="videoPlaceholder" class="placeholder">카메라 꺼짐</div>
+          </div>
+          <div class="preview-box">
+            <canvas id="previewCanvas" hidden></canvas>
+            <div id="previewPlaceholder" class="placeholder"></div>
+          </div>
+        </section>
+      </div>
+      <aside class="record-side">
+        <section class="card status-card">
+          <div class="status-row">
+            <span class="status-label">가마</span>
+            <strong id="recordKilnName">가마 없음</strong>
+          </div>
+          <div class="status-row">
+            <span class="status-label">상태</span>
+            <span id="recordState" class="state-badge">대기</span>
+          </div>
+          <div class="status-row">
+            <span class="status-label">경과 시간</span>
+            <span id="recordElapsed" class="elapsed">—</span>
+          </div>
+        </section>
+      </aside>
+    </section>
+
+    <!-- ===== 기록 보기 화면 ===== -->
+    <section id="viewHistory" class="view" hidden>
+      <section class="card">
+        <h2>기록 보기</h2>
+        <p class="muted">아직 준비 중입니다.</p>
+      </section>
+    </section>
+
+    <!-- ===== 설정 화면 ===== -->
+    <section id="viewSettings" class="view view-settings" hidden>
+      <section class="card">
+        <h2>가마</h2>
+        <div class="kiln-bar">
+          <label for="kilnSelect" class="sr-only">현재 가마</label>
+          <select id="kilnSelect"></select>
+        </div>
+        <div class="btn-row">
+          <button id="addKilnBtn" type="button">추가</button>
+          <button id="renameKilnBtn" type="button">이름 변경</button>
+          <button id="deleteKilnBtn" type="button" class="danger">삭제</button>
+        </div>
+        <div id="nameForm" class="name-form" hidden>
+          <label for="nameInput" id="nameFormLabel" class="field-label">새 가마 이름</label>
+          <div class="btn-row">
+            <input id="nameInput" type="text" maxlength="30" autocomplete="off" enterkeyhint="done">
+            <button id="nameOkBtn" type="button" class="primary">추가</button>
+            <button id="nameCancelBtn" type="button">취소</button>
+          </div>
+        </div>
+      </section>
+
+      <div data-camera-slot="settings"></div>
+
+      <section id="kilnSettings" class="card" hidden>
+        <h2>가마 설정</h2>
+        <label class="field">
+          <span class="field-label">숫자 자릿수</span>
+          <select id="digitsSelect"></select>
+        </label>
+        <label class="field">
+          <span class="field-label">판독 주기</span>
+          <select id="intervalSelect"></select>
+        </label>
+      </section>
+
+      <details class="card guide">
+        <summary>사용 안내</summary>
+        <ul>
+          <li>기록하는 동안 아이패드를 충전기에 연결해 두세요.</li>
+          <li>설정 → 손쉬운 사용 → 사용법 유도(Guided Access)를 켜면 실수로 다른 앱으로 나가는 것을 막을 수 있습니다.</li>
+          <li>Safari 공유 버튼 → "홈 화면에 추가"로 앱처럼 실행하는 것을 권장합니다.</li>
+          <li>가마의 열기가 닿지 않도록 아이패드를 충분히 떨어뜨려 두세요.</li>
+        </ul>
+      </details>
+    </section>
+
+    <footer><span id="appVersion"></span></footer>
+  </div>
+
+  <!-- 하단 탭 -->
+  <nav class="tabbar" aria-label="화면 전환">
+    <button type="button" class="tab" data-tab="record" aria-current="page">기록</button>
+    <button type="button" class="tab" data-tab="history">기록 보기</button>
+    <button type="button" class="tab" data-tab="settings">설정</button>
+  </nav>
 </body>
 </html>
