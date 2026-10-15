@@ -4,11 +4,11 @@
 
 import {
   READ_MAX_W, CONF_HIGH, CONF_LOW, JUMP_WARN_DEG, JUMP_COMPARE_MS, FRAME_SETTLE_MS
-} from './config.js?v=0.3.3';
-import { roiToSource, frameBlockReason } from './roi.js?v=0.3.3';
-import { recognize } from './recognizer.js?v=0.3.3';
-import { judgeOcr } from './ocr.js?v=0.3.3';
-import { variantOrder } from './ocrPreprocess.js?v=0.3.3';
+} from './config.js?v=0.3.4';
+import { kilnSourceRegion, frameBlockReason } from './roi.js?v=0.3.4';
+import { recognize } from './recognizer.js?v=0.3.4';
+import { judgeOcr } from './ocr.js?v=0.3.4';
+import { variantOrder } from './ocrPreprocess.js?v=0.3.4';
 
 export const ENGINE_LABELS = { ocr: 'OCR', sevenSegment: '7세그먼트' };
 
@@ -25,8 +25,8 @@ export function readKilnFrame(camera, kiln) {
   const block = frameBlockReason(kiln, camera);
   if (block) return { result: null, reason: block };
   const size = camera.videoSize();
-  const src = roiToSource(kiln.roi, size.width, size.height);
-  const W = Math.max(8, Math.min(src.w, READ_MAX_W));
+  const src = kilnSourceRegion(kiln, size.width, size.height);
+  const W = Math.max(8, Math.round(Math.min(src.w, READ_MAX_W)));
   const H = Math.max(8, Math.round(src.h * W / src.w));
   const img = camera.grabRegion(src, W, H);
   if (!img) return { result: null, reason: '영상을 읽지 못했습니다.' };

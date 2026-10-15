@@ -4,9 +4,9 @@
 
 import {
   OCR_TARGET_H, OCR_PAD_RATIO, OCR_CLOSE_RATIO, OCR_THICKEN_RATIO, OCR_SATURATED_R, OCR_SATURATED_GB
-} from './config.js?v=0.3.3';
-import { otsuThreshold } from './recognizer.js?v=0.3.3';
-import { roiToSource } from './roi.js?v=0.3.3';
+} from './config.js?v=0.3.4';
+import { otsuThreshold } from './recognizer.js?v=0.3.4';
+import { kilnSourceRegion } from './roi.js?v=0.3.4';
 
 // 전처리 방식 이름 (판독 보정 화면 표시용)
 export const VARIANT_LABELS = {
@@ -173,14 +173,15 @@ export function createOcrPreprocessor(camera) {
   }
 
   /**
-   * 현재 프레임에서 ROI를 잘라 확대 (실패 시 null)
+   * 현재 프레임에서 ROI를 잘라(회전 보정 포함) 확대 (실패 시 null)
    * @returns {{ source: HTMLCanvasElement, scaled: ImageData }|null}
    */
   function prepare(kiln) {
     const size = camera.videoSize();
     if (!kiln || !kiln.roi || !size.width || !size.height) return null;
-    const src = roiToSource(kiln.roi, size.width, size.height);
-    const h0 = Math.max(8, Math.min(src.h, OCR_TARGET_H));
+    // 회전했으면 원본 프레임에서 회전 보정해 수평으로 편 영역 (화면 노란 틀 안과 같은 영역)
+    const src = kilnSourceRegion(kiln, size.width, size.height);
+    const h0 = Math.max(8, Math.round(Math.min(src.h, OCR_TARGET_H)));
     const w0 = Math.max(8, Math.round(src.w * h0 / src.h));
     const img = camera.grabRegion(src, w0, h0);
     if (!img) return null;

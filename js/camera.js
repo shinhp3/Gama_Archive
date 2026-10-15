@@ -1,7 +1,7 @@
 // ===== 카메라 =====
 // 후면 카메라 스트림 시작/중지, 영상 프레임에서 원하는 영역을 잘라내기
 
-import { CAMERA_IDEAL_W, CAMERA_IDEAL_H } from './config.js?v=0.3.3';
+import { CAMERA_IDEAL_W, CAMERA_IDEAL_H } from './config.js?v=0.3.4';
 
 const PERMISSION_ERRORS = ['NotAllowedError', 'PermissionDeniedError', 'SecurityError'];
 
@@ -165,18 +165,32 @@ export function createCamera(els, hooks) {
     if (stream && video.paused) safePlay();
   }
 
-  // 원본 프레임의 src 사각형을 ctx에 outW×outH 크기로 그림 (프레임이 준비되지 않으면 예외 발생 가능)
+  // 원본 프레임의 src 영역을 ctx에 outW×outH 크기의 수평 이미지로 그림 (프레임이 준비되지 않으면 예외 발생 가능)
+  // src.angle이 있으면(roi.js roiSourceRegion) 중심 (cx, cy) 기준으로 angle만큼 회전된 w×h 영역을 반대로 돌려 수평으로 펴서 그림
   function drawRegion(ctx, src, outW, outH) {
-    ctx.drawImage(video, src.x, src.y, src.w, src.h, 0, 0, outW, outH);
+    if (!src.angle) {
+      ctx.drawImage(video, src.x, src.y, src.w, src.h, 0, 0, outW, outH);
+      return;
+    }
+    // 출력 좌표 → 원본 좌표: P = C + R(angle) · S⁻¹ · (출력 - 출력 가운데)
+    ctx.save();
+    ctx.translate(outW / 2, outH / 2);
+    ctx.scale(outW / src.w, outH / src.h);
+    ctx.rotate(-src.angle);
+    ctx.translate(-src.cx, -src.cy);
+    // 회전된 영역을 덮는 원본 사각형만 그대로 옮겨 그림 (프레임 전체를 그리지 않음)
+    const b = src.bounds;
+    ctx.drawImage(video, b.x, b.y, b.w, b.h, b.x, b.y, b.w, b.h);
+    ctx.restore();
   }
 
-  // 원본 프레임의 src 사각형을 W×H로 잘라 ImageData로 반환 (실패 시 null)
+  // 원본 프레임의 src 영역을 W×H로 잘라 ImageData로 반환 (실패 시 null)
   function grabRegion(src, W, H) {
     if (workCanvas.width !== W) workCanvas.width = W;
     if (workCanvas.height !== H) workCanvas.height = H;
     try {
       workCtx.imageSmoothingEnabled = true;
-      workCtx.drawImage(video, src.x, src.y, src.w, src.h, 0, 0, W, H);
+      drawRegion(workCtx, src, W, H);
       return workCtx.getImageData(0, 0, W, H);
     } catch (e) {
       return null;

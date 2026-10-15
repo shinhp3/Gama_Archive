@@ -510,6 +510,10 @@ select { -webkit-appearance: none; appearance: none; padding-right: 40px;
 }
 .zoom-step { font-size: 26px; font-weight: 600; flex: none; }
 .guide-label { flex: none; min-width: 44px; font-weight: 600; }
+.rotate-step { flex: none; padding-left: 10px; padding-right: 10px; font-variant-numeric: tabular-nums; }
+.debug-images { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+.debug-images figure { margin: 0; font-size: 12px; color: var(--muted, #666); }
+.debug-images canvas { display: block; max-width: 100%; height: auto; background: #000; border: 1px solid #ccc; }
 .zoom-value {
   flex: none;
   min-width: 52px;

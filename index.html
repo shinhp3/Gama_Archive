@@ -8,10 +8,10 @@
   <meta name="format-detection" content="telephone=no">
   <title>가마 온도 기록</title>
   <!-- 파일을 바꿀 때마다 ?v= 값을 올려야 아이패드가 예전 파일을 캐시에서 쓰지 않음 (js의 import 경로와 config.js의 APP_VERSION도 같이) -->
-  <link rel="stylesheet" href="css/style.css?v=0.3.3">
+  <link rel="stylesheet" href="css/style.css?v=0.3.4">
   <!-- 숫자 인식 엔진 Tesseract.js (버전 고정, config.js의 TESSERACT_* 경로와 같은 버전). 이미지는 브라우저 안에서만 처리 -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@7.0.0/dist/tesseract.min.js" integrity="sha384-2BQ3U3OdKOb0Uczxqr41I9UvZkzr4V9Hv8uSzMMZAlmhsFClvdZX5wi5fDCzG+tM" crossorigin="anonymous" async></script>
-  <script type="module" src="js/main.js?v=0.3.3"></script>
+  <script type="module" src="js/main.js?v=0.3.4"></script>
 </head>
 <body>
   <div class="page">
@@ -56,7 +56,20 @@
             <input id="guideInput" type="range" value="40">
             <output id="guideValue" class="zoom-value">40%</output>
           </div>
+          <!-- 노란 틀 회전 (영역 지정 모드에서만 표시). OCR 영역도 같은 각도로 회전 보정 -->
+          <div id="rotateBar" class="zoom-bar" hidden>
+            <label for="rotateInput" class="guide-label">회전</label>
+            <button id="rotateMinusBtn" type="button" class="rotate-step" aria-label="반시계 방향으로 0.5도">−0.5°</button>
+            <input id="rotateInput" type="range" value="0">
+            <button id="rotatePlusBtn" type="button" class="rotate-step" aria-label="시계 방향으로 0.5도">+0.5°</button>
+            <output id="rotateValue" class="zoom-value">0.0°</output>
+            <button id="rotateResetBtn" type="button" class="rotate-step">0°</button>
+          </div>
           <pre id="debugInfo" class="debug-info" hidden></pre>
+          <div id="debugImages" class="debug-images" hidden>
+            <figure><figcaption>회전 보정한 영역 (원본 프레임)</figcaption><canvas id="debugSourceCanvas"></canvas></figure>
+            <figure><figcaption>OCR 입력 이미지</figcaption><canvas id="debugInputCanvas"></canvas></figure>
+          </div>
           <div class="preview-box">
             <canvas id="previewCanvas" hidden></canvas>
             <div id="previewPlaceholder" class="placeholder"></div>

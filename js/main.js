@@ -1,16 +1,16 @@
 // ===== 진입점 =====
 // 화면 요소를 찾아 각 모듈을 연결하고, 탭 전환과 이벤트 처리를 담당
 
-import { APP_VERSION, PREVIEW_INTERVAL_MS, LIVE_READ_MS, CAMERA_IDEAL_W, CAMERA_IDEAL_H } from './config.js?v=0.3.3';
-import { initDb } from './db.js?v=0.3.3';
-import { createCamera } from './camera.js?v=0.3.3';
-import { createRoiEditor, roiToSource } from './roi.js?v=0.3.3';
-import { createKilnManager } from './kilns.js?v=0.3.3';
-import { createReader, createLiveDisplay, recognitionMode } from './reading.js?v=0.3.3';
-import { createOcrEngine } from './ocr.js?v=0.3.3';
-import { createOcrPreprocessor } from './ocrPreprocess.js?v=0.3.3';
-import { createCalibrationPanel } from './calibration.js?v=0.3.3';
-import { segmentQuads } from './recognizer.js?v=0.3.3';
+import { APP_VERSION, PREVIEW_INTERVAL_MS, LIVE_READ_MS, CAMERA_IDEAL_W, CAMERA_IDEAL_H } from './config.js?v=0.3.4';
+import { initDb } from './db.js?v=0.3.4';
+import { createCamera } from './camera.js?v=0.3.4';
+import { createRoiEditor, kilnSourceRegion } from './roi.js?v=0.3.4';
+import { createKilnManager } from './kilns.js?v=0.3.4';
+import { createReader, createLiveDisplay, recognitionMode } from './reading.js?v=0.3.4';
+import { createOcrEngine } from './ocr.js?v=0.3.4';
+import { createOcrPreprocessor } from './ocrPreprocess.js?v=0.3.4';
+import { createCalibrationPanel } from './calibration.js?v=0.3.4';
+import { segmentQuads } from './recognizer.js?v=0.3.4';
 
 const TABS = ['record', 'history'];
 const ROI_RESET_MESSAGE = '화면 방향이 바뀌어 영역이 초기화되었습니다. 영역 버튼을 눌러 숫자를 노란 틀에 다시 맞춰 주세요.';
@@ -55,7 +55,16 @@ function getElements() {
     guideBar: $('guideBar'),
     guideInput: $('guideInput'),
     guideValue: $('guideValue'),
+    rotateBar: $('rotateBar'),
+    rotateInput: $('rotateInput'),
+    rotateValue: $('rotateValue'),
+    rotateMinusBtn: $('rotateMinusBtn'),
+    rotatePlusBtn: $('rotatePlusBtn'),
+    rotateResetBtn: $('rotateResetBtn'),
     debugInfo: $('debugInfo'),
+    debugImages: $('debugImages'),
+    debugSourceCanvas: $('debugSourceCanvas'),
+    debugInputCanvas: $('debugInputCanvas'),
     kilnSelect: $('kilnSelect'),
     addKilnBtn: $('addKilnBtn'),
     renameKilnBtn: $('renameKilnBtn'),
@@ -163,7 +172,13 @@ function startApp() {
       zoomResetBtn: els.zoomResetBtn,
       guideBar: els.guideBar,
       guideInput: els.guideInput,
-      guideValue: els.guideValue
+      guideValue: els.guideValue,
+      rotateBar: els.rotateBar,
+      rotateInput: els.rotateInput,
+      rotateValue: els.rotateValue,
+      rotateMinusBtn: els.rotateMinusBtn,
+      rotatePlusBtn: els.rotatePlusBtn,
+      rotateResetBtn: els.rotateResetBtn
     },
     {
       camera,
@@ -219,13 +234,15 @@ function startApp() {
     const v = roi.currentView();
     if (v) lines.push('배율 ' + v.zoom.toFixed(2) + ' · 중심 ' + v.cx.toFixed(4) + ', ' + v.cy.toFixed(4));
     const k = kilns.current();
-    if (k) lines.push('틀 폭 ' + Math.round(k.guideWidthRatio * 100) + '%');
+    if (k) lines.push('틀 폭 ' + Math.round(k.guideWidthRatio * 100) + '% · 회전 ' + (k.rotationDeg > 0 ? '+' : '') + k.rotationDeg.toFixed(1) + '° (양수 = 시계 방향)');
     if (k && k.roi) {
       lines.push('영역 x ' + k.roi.x.toFixed(4) + ' y ' + k.roi.y.toFixed(4) + ' w ' + k.roi.w.toFixed(4) + ' h ' + k.roi.h.toFixed(4));
       const size = camera.videoSize();
       if (camera.isRunning() && size.width && size.height) {
-        const src = roiToSource(k.roi, size.width, size.height);
-        lines.push('영역 원본 해상도 ' + src.w + '×' + src.h + 'px (x ' + src.x + ', y ' + src.y + ')');
+        const src = kilnSourceRegion(k, size.width, size.height);
+        const px = (p) => '(' + p.x.toFixed(1) + ', ' + p.y.toFixed(1) + ')';
+        lines.push('영역 중심 ' + px({ x: src.cx, y: src.cy }) + ' · 크기 ' + src.w.toFixed(1) + '×' + src.h.toFixed(1) + 'px (원본 프레임)');
+        lines.push('네 모서리 (좌상 → 우상 → 우하 → 좌하) ' + src.corners.map(px).join(' '));
       }
     } else {
       lines.push('영역 지정 안 됨');
@@ -251,6 +268,19 @@ function startApp() {
     calib.show(res);
     const showSamples = k && res.engine === 'sevenSegment' && res.binary && calib.isOpen();
     roi.setSamples(showSamples ? segmentQuads(res, k.shear) : null);
+    if (debugMode && res.source) {
+      copyCanvas(res.source, els.debugSourceCanvas);
+      if (res.image) copyCanvas(res.image, els.debugInputCanvas);
+      els.debugImages.hidden = false;
+    }
+  }
+
+  function copyCanvas(src, dst) {
+    if (dst.width !== src.width) dst.width = src.width;
+    if (dst.height !== src.height) dst.height = src.height;
+    const ctx = dst.getContext('2d');
+    ctx.clearRect(0, 0, dst.width, dst.height);
+    ctx.drawImage(src, 0, 0);
   }
 
   // 인식 방식·인식 중 여부·엔진 상태 표시
