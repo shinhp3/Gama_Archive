@@ -1,13 +1,10 @@
 // ===== 영역(ROI) 지정 =====
 // 오버레이 그리기, 터치/마우스 드래그, 좌표 변환, 영역 확대 미리보기
-// 영역은 하나만 저장: 지정할 때의 video 원본 프레임 기준 비율(roi: 0~1)과 그 프레임 크기(roiFrame).
-// 화면이 회전해 프레임이 가로↔세로로 바뀌면, 프레임 중심 기준 픽셀 위치·크기를 유지하도록 현재 프레임 비율로 변환
-// (iOS는 회전 시 영상을 바로 세워 주므로 표시창은 프레임 중심에서 같은 픽셀 거리에 남음)
+// 영역은 "현재 방향의 video 원본 프레임 기준 비율(0~1)"로 방향별(roiLandscape/roiPortrait)로 저장
 
 import { HANDLE_RADIUS, HANDLE_HIT, MIN_ROI_PX, ROI_COLOR, PREVIEW_MAX_W, PREVIEW_MAX_H } from './config.js';
 
-export const NO_ROI = '영역 지정 안 됨';
-export const ROI_OUT_OF_FRAME = '영역이 화면 밖에 있습니다. 설정에서 영역을 다시 지정해 주세요';
+export const NO_ROI_FOR_ORIENTATION = '이 방향에서는 영역이 지정되지 않았습니다. 설정에서 영역을 지정해 주세요';
 
 function clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
 function round5(v) { return Math.round(v * 100000) / 100000; }
@@ -42,38 +39,15 @@ export function getVideoLayout(video) {
   return { orientation, videoW, videoH, clientW, clientH, box };
 }
 
-/**
- * from 프레임 기준 비율 ROI → to 프레임 기준 비율 ROI
- * 프레임 중심에서의 픽셀 위치·크기를 유지 (해상도가 다르면 긴 변 비율로 맞춤). 같은 크기면 그대로
- */
-export function mapRoi(roi, from, to) {
-  if (from.w === to.w && from.h === to.h) return { x: roi.x, y: roi.y, w: roi.w, h: roi.h };
-  const k = Math.max(to.w, to.h) / Math.max(from.w, from.h);
-  const sx = from.w * k / to.w;
-  const sy = from.h * k / to.h;
-  return {
-    x: 0.5 + (roi.x - 0.5) * sx,
-    y: 0.5 + (roi.y - 0.5) * sy,
-    w: roi.w * sx,
-    h: roi.h * sy
-  };
+// 방향 → 가마 설정의 영역 항목 이름
+export function roiKey(orientation) {
+  return orientation === 'portrait' ? 'roiPortrait' : 'roiLandscape';
 }
 
-// 프레임(0~1) 안쪽으로 잘라냄. 완전히 벗어나면 null
-function clipRoi(r) {
-  const x0 = clamp(r.x, 0, 1);
-  const y0 = clamp(r.y, 0, 1);
-  const x1 = clamp(r.x + r.w, 0, 1);
-  const y1 = clamp(r.y + r.h, 0, 1);
-  if (x1 - x0 <= 0.001 || y1 - y0 <= 0.001) return null;
-  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
-}
-
-// 가마에 저장된 영역을 현재 프레임 기준 비율로 변환 (프레임 밖으로 나간 부분은 잘라냄)
-// 영역이 없거나 화면 밖이면 null
-export function roiInFrame(kiln, layout) {
-  if (!kiln || !kiln.roi || !kiln.roiFrame || !layout || !layout.videoW || !layout.videoH) return null;
-  return clipRoi(mapRoi(kiln.roi, kiln.roiFrame, { w: layout.videoW, h: layout.videoH }));
+// 가마의 해당 방향 영역 (없으면 null)
+export function roiFor(kiln, orientation) {
+  if (!kiln || !orientation) return null;
+  return kiln[roiKey(orientation)] || null;
 }
 
 // 비율 ROI → 원본 프레임 픽셀 사각형
@@ -104,11 +78,11 @@ export function screenToNorm(p, layout) {
 
 /**
  * 판독/미리보기용으로 현재 프레임에서 잘라낼 원본 픽셀 사각형
- * 화면에 표시되는 영역과 항상 같은 변환(roiInFrame)을 사용. 잘라낼 수 없으면 null
+ * 화면에 표시되는 영역과 항상 같은 값(현재 방향의 영역)을 사용. 잘라낼 수 없으면 null
  */
 export function currentSourceRect(kiln, video) {
   const layout = getVideoLayout(video);
-  const roi = roiInFrame(kiln, layout);
+  const roi = roiFor(kiln, layout.orientation);
   if (!roi) return null;
   return roiToSource(roi, layout);
 }
@@ -117,8 +91,7 @@ export function currentSourceRect(kiln, video) {
 export function frameBlockReason(kiln, camera, video) {
   if (!kiln) return '가마 없음';
   if (!camera.isFrameReady()) return '카메라 꺼짐';
-  if (!kiln.roi) return NO_ROI;
-  if (!roiInFrame(kiln, getVideoLayout(video))) return ROI_OUT_OF_FRAME;
+  if (!roiFor(kiln, getVideoLayout(video).orientation)) return NO_ROI_FOR_ORIENTATION;
   return null;
 }
 
@@ -160,7 +133,7 @@ function hitTest(p, layout, roi) {
 /**
  * @param {{ video: HTMLVideoElement, overlay: HTMLCanvasElement, previewCanvas: HTMLCanvasElement, previewPlaceholder: HTMLElement }} els
  * @param {{ camera: object, getKiln: Function, onMessage: Function, onCommit: Function }} deps
- *   onCommit(roi, frame): 드래그가 끝나 새 영역이 확정될 때. roi는 frame({w,h}: 그 순간의 원본 프레임 크기) 기준 비율
+ *   onCommit(roi, orientation): 드래그가 끝나 해당 방향의 새 영역이 확정될 때
  */
 export function createRoiEditor(els, deps) {
   const { video, overlay, previewCanvas, previewPlaceholder } = els;
@@ -184,15 +157,10 @@ export function createRoiEditor(els, deps) {
     return { x: clientX - r.left, y: clientY - r.top };
   }
 
-  // 드래그를 시작한 프레임과 현재 프레임 크기가 같은지 (드래그 도중 회전 감지)
-  function sameFrame(d, layout) {
-    return !!layout && d.frame.w === layout.videoW && d.frame.h === layout.videoH;
-  }
-
-  // 드래그 중이면 임시 영역, 아니면 저장된 영역을 현재 프레임 기준으로 변환한 값
+  // 드래그 중이면 임시 영역, 아니면 현재 방향의 저장된 영역
   function displayedRoi(layout) {
-    if (drag && drag.moved && drag.roi && sameFrame(drag, layout)) return drag.roi;
-    return roiInFrame(deps.getKiln(), layout);
+    if (drag && drag.moved && drag.roi && layout && drag.orientation === layout.orientation) return drag.roi;
+    return roiFor(deps.getKiln(), layout ? layout.orientation : null);
   }
 
   function cancelDrag() {
@@ -229,9 +197,9 @@ export function createRoiEditor(els, deps) {
     const box = layout.box;
     const roi = displayedRoi(layout);
 
+    // 현재 방향의 영역이 없으면 영역을 숨기고 안내 문구 표시
     if (!roi) {
-      // 저장된 영역이 회전 후 프레임 밖으로 완전히 벗어난 경우만 안내
-      if (k.roi) drawNotice(ctx, box, ROI_OUT_OF_FRAME);
+      drawNotice(ctx, box, NO_ROI_FOR_ORIENTATION);
       return;
     }
 
@@ -328,7 +296,7 @@ export function createRoiEditor(els, deps) {
     }
     e.preventDefault();
 
-    const roi = roiInFrame(k, layout);
+    const roi = roiFor(k, layout.orientation);
     const local = clientToLocal(e.clientX, e.clientY);
     const p = screenToNorm(local, layout);
     const hit = hitTest(local, layout, roi);
@@ -345,7 +313,7 @@ export function createRoiEditor(els, deps) {
       next = { mode: 'new', anchor: clampPoint(p) };
     }
     next.pointerId = e.pointerId;
-    next.frame = { w: layout.videoW, h: layout.videoH }; // 드래그 도중 회전하면 취소하기 위해 기억
+    next.orientation = layout.orientation; // 드래그 도중 방향이 바뀌면 취소하기 위해 기억
     next.roi = null;
     next.moved = false;
     drag = next;
@@ -363,7 +331,7 @@ export function createRoiEditor(els, deps) {
     e.preventDefault();
 
     const layout = currentLayout();
-    if (!sameFrame(d, layout)) return;
+    if (!layout || layout.orientation !== d.orientation) return;
     const p = screenToNorm(clientToLocal(e.clientX, e.clientY), layout);
 
     if (d.mode === 'move') {
@@ -388,7 +356,9 @@ export function createRoiEditor(els, deps) {
     const layout = currentLayout();
     const cancelled = e.type === 'pointercancel';
     // 드래그 도중 화면이 회전했으면 저장하지 않음
-    if (!cancelled && k && sameFrame(d, layout) && d.moved && d.roi) {
+    const sameOrientation = layout && layout.orientation === d.orientation;
+
+    if (!cancelled && k && sameOrientation && d.moved && d.roi) {
       if (d.roi.w * layout.box.w < MIN_ROI_PX || d.roi.h * layout.box.h < MIN_ROI_PX) {
         deps.onMessage('영역이 너무 작습니다. 조금 더 크게 드래그하세요.', 'error', 3000);
       } else {
@@ -397,7 +367,7 @@ export function createRoiEditor(els, deps) {
           y: round5(d.roi.y),
           w: round5(d.roi.w),
           h: round5(d.roi.h)
-        }, d.frame);
+        }, d.orientation);
       }
     }
     scheduleDraw();
@@ -415,7 +385,7 @@ export function createRoiEditor(els, deps) {
     const layout = currentLayout();
     let cursor = 'crosshair';
     if (layout) {
-      const roi = roiInFrame(deps.getKiln(), layout);
+      const roi = roiFor(deps.getKiln(), layout.orientation);
       cursor = hitTest(clientToLocal(e.clientX, e.clientY), layout, roi).cursor;
     }
     setCursor(cursor);
@@ -444,7 +414,7 @@ export function createRoiEditor(els, deps) {
     const roi = (k && camera.isFrameReady()) ? displayedRoi(layout) : null;
     if (!roi) {
       previewCanvas.hidden = true;
-      previewPlaceholder.textContent = frameBlockReason(k, camera, video) || NO_ROI;
+      previewPlaceholder.textContent = frameBlockReason(k, camera, video) || NO_ROI_FOR_ORIENTATION;
       previewPlaceholder.hidden = false;
       return;
     }

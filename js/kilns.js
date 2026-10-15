@@ -41,13 +41,17 @@ export function sanitizeKiln(raw) {
   if (!name) return null;
   let digits = parseInt(raw.digits, 10);
   if (!(digits >= MIN_DIGITS && digits <= MAX_DIGITS)) digits = DEFAULT_DIGITS;
-  const kiln = {
+  const roiLandscape = copyRoi(raw.roiLandscape);
+  const roiPortrait = copyRoi(raw.roiPortrait);
+  return {
     id: typeof raw.id === 'string' && raw.id ? raw.id : makeId(),
     name,
-    // 영역: 지정할 때의 video 원본 프레임(roiFrame) 기준 비율. 회전 시 roi.js에서 현재 프레임 기준으로 변환
-    // roiFrame이 없으면 프레임 크기를 모르는 이전 버전 값 → 카메라가 켜지면 resolveRoi에서 채움
+    // 방향별 영역 (해당 방향 video 원본 프레임 기준 비율)
+    roiLandscape,
+    roiPortrait,
+    // 방향 구분 전 버전에서 저장한 영역. 저장 당시 방향을 알 수 없어,
+    // 카메라가 켜졌을 때 그 방향에 영역이 없으면 그 방향의 영역으로 옮김 (adoptLegacyRoi)
     roi: copyRoi(raw.roi),
-    roiFrame: isValidFrame(raw.roiFrame) ? { w: raw.roiFrame.w, h: raw.roiFrame.h } : null,
     digits,
     polarity: raw.polarity === 'dark' ? 'dark' : DEFAULT_POLARITY,
     redLedMode: raw.redLedMode === true,
@@ -57,18 +61,6 @@ export function sanitizeKiln(raw) {
     readIntervalSec: READ_INTERVAL_OPTIONS.indexOf(raw.readIntervalSec) >= 0 ? raw.readIntervalSec : DEFAULT_READ_INTERVAL_SEC,
     createdAt: isNum(raw.createdAt) ? raw.createdAt : Date.now()
   };
-  // 방향별로 저장하던 버전(roiLandscape/roiPortrait)의 값은 프레임 크기를 알 때 하나로 합치기 위해 보관
-  if (!kiln.roiFrame) {
-    const land = copyRoi(raw.roiLandscape);
-    const port = copyRoi(raw.roiPortrait);
-    if (land) kiln.roiLandscape = land;
-    if (port) kiln.roiPortrait = port;
-  }
-  return kiln;
-}
-
-function isValidFrame(f) {
-  return !!f && typeof f === 'object' && isNum(f.w) && isNum(f.h) && f.w > 0 && f.h > 0;
 }
 
 // 이전 버전(v0.1) 항목 이름을 새 형식으로 바꿈
@@ -181,32 +173,16 @@ export function createKilnManager(els, hooks) {
     }
   }
 
-  /**
-   * 프레임 크기를 모르는 이전 버전 영역에 프레임 크기(roiFrame)를 채움. 카메라 프레임 크기를 처음 알게 됐을 때 호출
-   * - 방향별 값이 있으면 현재 방향 값을 우선 사용 (현재 프레임 크기), 없으면 다른 방향 값 (가로/세로를 바꾼 크기)
-   * - 방향 정보가 없는 값(roi)은 현재 프레임에서 지정한 것으로 간주
-   * @param {{ videoW: number, videoH: number }} layout
-   */
-  function resolveRoi(layout) {
+  // 방향 구분 전 영역(roi)을 현재 방향의 영역으로 옮김. 이미 그 방향에 영역이 있으면 옛 값은 버림
+  // 옮겼으면 true
+  function adoptLegacyRoi(orientation) {
     const k = current();
-    if (!k || k.roiFrame || !layout.videoW || !layout.videoH) return;
-    if (!k.roi && !k.roiLandscape && !k.roiPortrait) return;
-    const cur = { w: layout.videoW, h: layout.videoH };
-    const swapped = { w: layout.videoH, h: layout.videoW };
-    const landscapeNow = cur.w >= cur.h;
-    const same = landscapeNow ? k.roiLandscape : k.roiPortrait;
-    const other = landscapeNow ? k.roiPortrait : k.roiLandscape;
-    let patch;
-    if (same) {
-      patch = { roi: same, roiFrame: cur };
-    } else if (other) {
-      patch = { roi: other, roiFrame: swapped };
-    } else {
-      patch = { roi: k.roi, roiFrame: cur };
-    }
-    delete k.roiLandscape;
-    delete k.roiPortrait;
+    if (!k || !k.roi || !orientation) return false;
+    const key = orientation === 'portrait' ? 'roiPortrait' : 'roiLandscape';
+    const patch = { roi: null };
+    if (!k[key]) patch[key] = k.roi;
     update(patch);
+    return !!patch[key];
   }
 
   // ===== 선택 =====
@@ -370,5 +346,5 @@ export function createKilnManager(els, hooks) {
   populateOptions();
   bindEvents();
 
-  return { load, current, update, select, render, resolveRoi, hasKilns: () => kilns.length > 0 };
+  return { load, current, update, select, render, adoptLegacyRoi, hasKilns: () => kilns.length > 0 };
 }

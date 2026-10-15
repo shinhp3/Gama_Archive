@@ -4,16 +4,16 @@
 import { APP_VERSION, PREVIEW_INTERVAL_MS } from './config.js';
 import { initDb } from './db.js';
 import { createCamera } from './camera.js';
-import { createRoiEditor, getVideoLayout, roiInFrame } from './roi.js';
+import { createRoiEditor, getVideoLayout, roiKey, roiFor } from './roi.js';
 import { createKilnManager } from './kilns.js';
 
 const TABS = ['record', 'history', 'settings'];
 const RELAYOUT_LATE_MS = 300;   // iOS는 회전 직후 레이아웃/영상 크기가 늦게 바뀌므로 한 번 더 계산
 const DEBUG_INTERVAL_MS = 500;
 
-// 영역이 저장돼 있는지 (프레임 크기를 아직 모르는 이전 버전 값 포함)
+// 방향과 상관없이 영역이 하나라도 저장돼 있는지
 function hasAnyRoi(k) {
-  return !!(k && (k.roi || k.roiLandscape || k.roiPortrait));
+  return !!(k && (k.roiLandscape || k.roiPortrait || k.roi));
 }
 
 function fmtRect(r) {
@@ -103,9 +103,9 @@ function startApp() {
   const debugEl = createDebugView();
 
   function refreshCameraView() {
-    // 프레임 크기를 모르는 이전 버전 영역은 실제 프레임 크기를 알게 된 시점에 채움
+    // 방향 구분 전 영역은 실제 프레임 방향을 알게 된 시점에 그 방향의 영역으로 옮김
     if (camera.isFrameReady()) {
-      kilns.resolveRoi(getVideoLayout(els.video));
+      kilns.adoptLegacyRoi(getVideoLayout(els.video).orientation);
     }
     roi.scheduleDraw();
     roi.updatePreview();
@@ -146,8 +146,7 @@ function startApp() {
       'video: ' + L.videoW + '×' + L.videoH,
       'client: ' + L.clientW + '×' + L.clientH,
       'contain: ' + (L.box ? r(L.box.x) + ', ' + r(L.box.y) + ', ' + r(L.box.w) + '×' + r(L.box.h) : '-'),
-      'ROI 저장: ' + fmtRect(k && k.roi) + (k && k.roiFrame ? ' @' + k.roiFrame.w + '×' + k.roiFrame.h : ''),
-      'ROI 현재: ' + fmtRect(roiInFrame(k, L))
+      'ROI(' + (L.orientation || '-') + '): ' + fmtRect(roiFor(k, L.orientation))
     ].join('\n');
   }
 
@@ -183,7 +182,7 @@ function startApp() {
   function guideRoi() {
     const k = kilns.current();
     if (activeTab !== 'settings' || !k) return;
-    if (hasAnyRoi(k)) return;
+    if (camera.isFrameReady() ? roiFor(k, getVideoLayout(els.video).orientation) : hasAnyRoi(k)) return;
     if (camera.isRunning()) {
       showMessage('영상 위를 드래그해 온도 표시창 영역을 지정하세요.', 'ok');
     } else {
@@ -207,9 +206,11 @@ function startApp() {
     refreshCameraView();
   }
 
-  // 영역과 지정한 순간의 프레임 크기를 함께 저장
-  function handleRoiCommit(newRoi, frame) {
-    kilns.update({ roi: newRoi, roiFrame: frame });
+  // 드래그한 방향의 영역만 저장
+  function handleRoiCommit(newRoi, orientation) {
+    const patch = {};
+    patch[roiKey(orientation)] = newRoi;
+    kilns.update(patch);
     hideMessage();
     refreshCameraView();
   }
