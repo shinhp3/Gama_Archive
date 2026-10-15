@@ -4,7 +4,7 @@
 
 import { HANDLE_RADIUS, HANDLE_HIT, MIN_ROI_PX, ROI_COLOR, PREVIEW_MAX_W, PREVIEW_MAX_H } from './config.js';
 
-export const ROI_ORIENTATION_CHANGED = '화면 방향이 바뀌었습니다. 설정에서 이 방향의 영역을 다시 지정해 주세요';
+export const ROI_ORIENTATION_CHANGED = '화면 방향이 바뀌었습니다. 영역 버튼을 눌러 이 방향의 영역을 다시 지정해 주세요';
 export const NO_ROI = '영역 지정 안 됨';
 
 // 현재 방향의 영역이 없을 때 안내 문구: 다른 방향에는 영역이 있으면 "방향이 바뀌었다"는 안내

@@ -321,7 +321,6 @@ export function createKilnManager(els, hooks) {
     els.addKilnBtn.classList.toggle('primary', kilns.length === 0); // 가마가 없으면 추가 버튼 강조
 
     els.kilnSettings.hidden = !k;
-    els.recordKilnName.textContent = k ? k.name : '가마 없음';
     if (!k) return;
     els.digitsSelect.value = String(k.digits);
     els.intervalSelect.value = String(k.readIntervalSec);

@@ -7,7 +7,7 @@ import { createCamera } from './camera.js';
 import { createRoiEditor, getVideoLayout, roiKey, roiFor } from './roi.js';
 import { createKilnManager } from './kilns.js';
 
-const TABS = ['record', 'history', 'settings'];
+const TABS = ['record', 'history'];
 const RELAYOUT_LATE_MS = 300;   // iOS는 회전 직후 레이아웃/영상 크기가 늦게 바뀌므로 한 번 더 계산
 const DEBUG_INTERVAL_MS = 500;
 
@@ -26,10 +26,9 @@ function getElements() {
   const $ = (id) => document.getElementById(id);
   return {
     message: $('message'),
-    views: { record: $('viewRecord'), history: $('viewHistory'), settings: $('viewSettings') },
+    views: { record: $('viewRecord'), history: $('viewHistory') },
     tabButtons: Array.prototype.slice.call(document.querySelectorAll('.tabbar .tab')),
-    cameraSlots: Array.prototype.slice.call(document.querySelectorAll('[data-camera-slot]')),
-    cameraCard: $('cameraCard'),
+    roiEditBtn: $('roiEditBtn'),
     cameraBtn: $('cameraBtn'),
     videoWrap: $('videoWrap'),
     video: $('video'),
@@ -37,7 +36,6 @@ function getElements() {
     videoPlaceholder: $('videoPlaceholder'),
     previewCanvas: $('previewCanvas'),
     previewPlaceholder: $('previewPlaceholder'),
-    recordKilnName: $('recordKilnName'),
     kilnSelect: $('kilnSelect'),
     addKilnBtn: $('addKilnBtn'),
     renameKilnBtn: $('renameKilnBtn'),
@@ -56,7 +54,6 @@ function getElements() {
 
 function startApp() {
   const els = getElements();
-  let activeTab = 'record';
 
   // ===== 안내 메시지 =====
   let messageTimer = null;
@@ -153,7 +150,6 @@ function startApp() {
   // ===== 탭 전환 =====
   function showTab(tab) {
     if (TABS.indexOf(tab) < 0) return;
-    activeTab = tab;
     TABS.forEach((t) => { els.views[t].hidden = t !== tab; });
     els.tabButtons.forEach((btn) => {
       if (btn.dataset.tab === tab) {
@@ -162,36 +158,45 @@ function startApp() {
         btn.removeAttribute('aria-current');
       }
     });
-
-    // 카메라 카드를 현재 탭의 자리로 옮김 (영상 스트림은 그대로 유지)
-    const slot = els.cameraSlots.filter((s) => s.dataset.cameraSlot === tab)[0];
-    if (slot && els.cameraCard.parentNode !== slot) {
-      slot.appendChild(els.cameraCard);
-      // iOS는 video 요소를 옮기면 재생이 멈추는 경우가 있어 다시 재생
-      camera.resumeIfPaused();
-    }
-
-    // 영역은 설정 화면에서만 편집
-    roi.setEditable(tab === 'settings');
+    if (tab !== 'record') setRoiEditing(false);
     refreshCameraView();
     window.scrollTo(0, 0);
-    if (tab === 'settings') guideRoi();
   }
 
-  // 설정 화면에서 영역이 없으면 지정 방법 안내
+  // ===== 영역 지정 모드 (카메라 옆 영역 버튼으로 켜고 끔) =====
+  function setRoiEditing(on) {
+    const next = !!on && camera.isRunning() && !!kilns.current();
+    if (roi.isEditable() === next) return;
+    roi.setEditable(next);
+    els.roiEditBtn.setAttribute('aria-pressed', next ? 'true' : 'false');
+    if (next) {
+      showMessage('영상 위를 드래그해 온도 표시창 영역을 지정하세요. 다 되면 영역 버튼을 다시 누르세요.', 'ok');
+    } else {
+      hideMessage();
+    }
+  }
+
+  // 카메라가 켜져 있고 가마가 있을 때만 영역 버튼 사용 가능
+  function updateRoiButton() {
+    const usable = camera.isRunning() && !!kilns.current();
+    els.roiEditBtn.disabled = !usable;
+    if (!usable) setRoiEditing(false);
+  }
+
+  // 영역이 하나도 없으면 지정 방법 안내
   function guideRoi() {
     const k = kilns.current();
-    if (activeTab !== 'settings' || !k) return;
-    if (camera.isFrameReady() ? roiFor(k, getVideoLayout(els.video).orientation) : hasAnyRoi(k)) return;
+    if (!k || hasAnyRoi(k) || roi.isEditable()) return;
     if (camera.isRunning()) {
-      showMessage('영상 위를 드래그해 온도 표시창 영역을 지정하세요.', 'ok');
+      showMessage('영역 버튼을 누른 뒤 영상 위를 드래그해 온도 표시창 영역을 지정하세요.', 'ok');
     } else {
-      showMessage('"카메라 시작"을 누른 뒤 영상 위를 드래그해 온도 표시창 영역을 지정하세요.', 'ok');
+      showMessage('"카메라 시작"을 누른 뒤 영역 버튼으로 온도 표시창 영역을 지정하세요.', 'ok');
     }
   }
 
   // ===== 가마 =====
   function handleKilnChange(switched) {
+    updateRoiButton();
     if (switched) {
       roi.cancelDrag();
       const k = kilns.current();
@@ -199,7 +204,7 @@ function startApp() {
         showMessage('"추가"를 눌러 가마를 등록하세요.', 'info');
       } else if (!hasAnyRoi(k)) {
         guideRoi();
-      } else {
+      } else if (!roi.isEditable()) {
         hideMessage();
       }
     }
@@ -211,21 +216,17 @@ function startApp() {
     const patch = {};
     patch[roiKey(orientation)] = newRoi;
     kilns.update(patch);
-    hideMessage();
     refreshCameraView();
   }
 
   // ===== 카메라 =====
   function handleCameraStarted() {
+    updateRoiButton();
     const k = kilns.current();
     if (!k) {
-      showMessage('설정 탭에서 가마를 먼저 추가하세요.', 'info');
+      showMessage('"추가"를 눌러 가마를 먼저 등록하세요.', 'info');
     } else if (!hasAnyRoi(k)) {
-      if (activeTab === 'settings') {
-        guideRoi();
-      } else {
-        showMessage('설정 탭에서 영상 위를 드래그해 온도 표시창 영역을 지정하세요.', 'info');
-      }
+      guideRoi();
     } else {
       hideMessage();
     }
@@ -235,6 +236,7 @@ function startApp() {
   function stopCamera() {
     camera.stop();
     roi.cancelDrag();
+    updateRoiButton();
     refreshCameraView();
   }
 
@@ -258,6 +260,9 @@ function startApp() {
         camera.start();
       }
     });
+
+    // 영역 지정 모드 켜기/끄기
+    els.roiEditBtn.addEventListener('click', () => setRoiEditing(!roi.isEditable()));
 
     // 영역 지정 드래그
     const ov = els.overlay;
@@ -301,7 +306,6 @@ function startApp() {
     .then(() => {
       refreshCameraView();
       if (!kilns.hasKilns()) {
-        showTab('settings');
         showMessage('"추가"를 눌러 가마를 등록하세요.', 'info');
       }
     })

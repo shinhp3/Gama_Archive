@@ -167,31 +167,55 @@ select { -webkit-appearance: none; appearance: none; padding-right: 40px;
   margin-bottom: 12px;
 }
 .card-head h2 { margin: 0; }
+.head-actions { display: flex; gap: 8px; }
+
+/* 아이콘만 있는 정사각 버튼 (영역 지정) */
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  padding: 0;
+}
+.icon-btn svg { display: block; }
+.icon-btn[aria-pressed="true"] {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-text);
+}
 
 /* ===== 기록 화면 ===== */
 .view-record { display: grid; grid-template-columns: minmax(0, 1fr); }
+.view-record { gap: 16px; }
 .record-main,
-.record-side {
+.record-side,
+.record-extra {
   display: flex;
   flex-direction: column;
   gap: 16px;
   min-width: 0;
 }
-/* 세로 화면에서는 상태 카드를 카메라 위에 표시 */
+/* 세로 화면: 가마 카드 → 카메라 → 접는 카드 순서 */
 .record-side { order: -1; }
-/* 가로 화면(넓은 화면)에서는 2단 배치 */
+/* 가로 화면(넓은 화면): 왼쪽 카메라, 오른쪽에 가마 카드와 접는 카드 */
 @media (min-width: 900px) and (orientation: landscape) {
-  .view-record { grid-template-columns: minmax(0, 1.7fr) minmax(280px, 1fr); }
-  .record-side { order: 0; }
+  .view-record {
+    grid-template-columns: minmax(0, 1.7fr) minmax(280px, 1fr);
+    grid-template-rows: auto 1fr;
+    align-items: start;
+  }
+  .record-main { grid-column: 1; grid-row: 1 / span 2; }
+  .record-side { grid-column: 2; grid-row: 1; order: 0; }
+  .record-extra { grid-column: 2; grid-row: 2; }
 }
 
-.status-card {
+.status-line {
   display: flex;
   flex-wrap: wrap;
   gap: 8px 24px;
-}
-@media (min-width: 900px) and (orientation: landscape) {
-  .status-card { flex-direction: column; }
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
 }
 .status-row {
   display: flex;
@@ -208,12 +232,12 @@ select { -webkit-appearance: none; appearance: none; padding-right: 40px;
 }
 .elapsed { font-variant-numeric: tabular-nums; }
 
-/* ===== 설정 화면 ===== */
-.view-settings { max-width: 860px; margin: 0 auto; }
+/* ===== 가마 관리 ===== */
 .kiln-bar { margin-bottom: 10px; }
 .name-form { margin-top: 14px; }
 
-.guide summary {
+/* 접었다 펴는 카드 (가마 설정, 사용 안내) */
+.fold summary {
   display: flex;
   align-items: center;
   min-height: 44px;
@@ -222,8 +246,9 @@ select { -webkit-appearance: none; appearance: none; padding-right: 40px;
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
 }
-.guide ul { margin: 8px 0 0; padding-left: 22px; }
-.guide li { margin-bottom: 6px; }
+.fold[open] summary { margin-bottom: 8px; }
+.guide-list { margin: 0; padding-left: 22px; }
+.guide-list li { margin-bottom: 6px; }
 
 /* ===== 카메라 영상 + 오버레이 ===== */
 .video-wrap {

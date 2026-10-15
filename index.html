@@ -19,12 +19,20 @@
 
     <!-- ===== 기록 화면 ===== -->
     <section id="viewRecord" class="view view-record">
-      <div class="record-main" data-camera-slot="record">
-        <!-- 카메라 카드: 현재 탭의 data-camera-slot 위치로 옮겨짐 -->
-        <section id="cameraCard" class="card">
+      <div class="record-main">
+        <section class="card">
           <div class="card-head">
             <h2>카메라</h2>
-            <button id="cameraBtn" type="button" class="primary">카메라 시작</button>
+            <div class="head-actions">
+              <!-- 영역 지정 모드 켜기/끄기 -->
+              <button id="roiEditBtn" type="button" class="icon-btn" aria-label="영역 지정" aria-pressed="false" title="영역 지정" disabled>
+                <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M3 8V4a1 1 0 0 1 1-1h4M16 3h4a1 1 0 0 1 1 1v4M21 16v4a1 1 0 0 1-1 1h-4M8 21H4a1 1 0 0 1-1-1v-4"/>
+                  <rect x="7" y="9" width="10" height="6" rx="1"/>
+                </svg>
+              </button>
+              <button id="cameraBtn" type="button" class="primary">카메라 시작</button>
+            </div>
           </div>
           <div id="videoWrap" class="video-wrap">
             <video id="video" playsinline webkit-playsinline muted autoplay></video>
@@ -38,21 +46,61 @@
         </section>
       </div>
       <aside class="record-side">
-        <section class="card status-card">
-          <div class="status-row">
-            <span class="status-label">가마</span>
-            <strong id="recordKilnName">가마 없음</strong>
+        <!-- 가마 선택/관리 + 진행 상태 -->
+        <section class="card">
+          <div class="kiln-bar">
+            <label for="kilnSelect" class="sr-only">현재 가마</label>
+            <select id="kilnSelect"></select>
           </div>
-          <div class="status-row">
-            <span class="status-label">상태</span>
-            <span id="recordState" class="state-badge">대기</span>
+          <div class="btn-row">
+            <button id="addKilnBtn" type="button">추가</button>
+            <button id="renameKilnBtn" type="button">이름 변경</button>
+            <button id="deleteKilnBtn" type="button" class="danger">삭제</button>
           </div>
-          <div class="status-row">
-            <span class="status-label">경과 시간</span>
-            <span id="recordElapsed" class="elapsed">—</span>
+          <div id="nameForm" class="name-form" hidden>
+            <label for="nameInput" id="nameFormLabel" class="field-label">새 가마 이름</label>
+            <div class="btn-row">
+              <input id="nameInput" type="text" maxlength="30" autocomplete="off" enterkeyhint="done">
+              <button id="nameOkBtn" type="button" class="primary">추가</button>
+              <button id="nameCancelBtn" type="button">취소</button>
+            </div>
+          </div>
+          <div class="status-line">
+            <div class="status-row">
+              <span class="status-label">상태</span>
+              <span id="recordState" class="state-badge">대기</span>
+            </div>
+            <div class="status-row">
+              <span class="status-label">경과 시간</span>
+              <span id="recordElapsed" class="elapsed">—</span>
+            </div>
           </div>
         </section>
       </aside>
+
+      <div class="record-extra">
+        <details id="kilnSettings" class="card fold" hidden>
+          <summary>가마 설정</summary>
+          <label class="field">
+            <span class="field-label">숫자 자릿수</span>
+            <select id="digitsSelect"></select>
+          </label>
+          <label class="field">
+            <span class="field-label">판독 주기</span>
+            <select id="intervalSelect"></select>
+          </label>
+        </details>
+
+        <details class="card fold">
+          <summary>사용 안내</summary>
+          <ul class="guide-list">
+            <li>기록하는 동안 아이패드를 충전기에 연결해 두세요.</li>
+            <li>설정 → 손쉬운 사용 → 사용법 유도(Guided Access)를 켜면 실수로 다른 앱으로 나가는 것을 막을 수 있습니다.</li>
+            <li>Safari 공유 버튼 → "홈 화면에 추가"로 앱처럼 실행하는 것을 권장합니다.</li>
+            <li>가마의 열기가 닿지 않도록 아이패드를 충분히 떨어뜨려 두세요.</li>
+          </ul>
+        </details>
+      </div>
     </section>
 
     <!-- ===== 기록 보기 화면 ===== -->
@@ -63,54 +111,6 @@
       </section>
     </section>
 
-    <!-- ===== 설정 화면 ===== -->
-    <section id="viewSettings" class="view view-settings" hidden>
-      <section class="card">
-        <h2>가마</h2>
-        <div class="kiln-bar">
-          <label for="kilnSelect" class="sr-only">현재 가마</label>
-          <select id="kilnSelect"></select>
-        </div>
-        <div class="btn-row">
-          <button id="addKilnBtn" type="button">추가</button>
-          <button id="renameKilnBtn" type="button">이름 변경</button>
-          <button id="deleteKilnBtn" type="button" class="danger">삭제</button>
-        </div>
-        <div id="nameForm" class="name-form" hidden>
-          <label for="nameInput" id="nameFormLabel" class="field-label">새 가마 이름</label>
-          <div class="btn-row">
-            <input id="nameInput" type="text" maxlength="30" autocomplete="off" enterkeyhint="done">
-            <button id="nameOkBtn" type="button" class="primary">추가</button>
-            <button id="nameCancelBtn" type="button">취소</button>
-          </div>
-        </div>
-      </section>
-
-      <div data-camera-slot="settings"></div>
-
-      <section id="kilnSettings" class="card" hidden>
-        <h2>가마 설정</h2>
-        <label class="field">
-          <span class="field-label">숫자 자릿수</span>
-          <select id="digitsSelect"></select>
-        </label>
-        <label class="field">
-          <span class="field-label">판독 주기</span>
-          <select id="intervalSelect"></select>
-        </label>
-      </section>
-
-      <details class="card guide">
-        <summary>사용 안내</summary>
-        <ul>
-          <li>기록하는 동안 아이패드를 충전기에 연결해 두세요.</li>
-          <li>설정 → 손쉬운 사용 → 사용법 유도(Guided Access)를 켜면 실수로 다른 앱으로 나가는 것을 막을 수 있습니다.</li>
-          <li>Safari 공유 버튼 → "홈 화면에 추가"로 앱처럼 실행하는 것을 권장합니다.</li>
-          <li>가마의 열기가 닿지 않도록 아이패드를 충분히 떨어뜨려 두세요.</li>
-        </ul>
-      </details>
-    </section>
-
     <footer><span id="appVersion"></span></footer>
   </div>
 
@@ -118,7 +118,6 @@
   <nav class="tabbar" aria-label="화면 전환">
     <button type="button" class="tab" data-tab="record" aria-current="page">기록</button>
     <button type="button" class="tab" data-tab="history">기록 보기</button>
-    <button type="button" class="tab" data-tab="settings">설정</button>
   </nav>
 </body>
 </html>
