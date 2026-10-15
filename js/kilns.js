@@ -30,6 +30,10 @@ function isValidRoi(r) {
     r.x + r.w <= 1.0001 && r.y + r.h <= 1.0001;
 }
 
+function copyRoi(r) {
+  return isValidRoi(r) ? { x: r.x, y: r.y, w: r.w, h: r.h } : null;
+}
+
 // 저장된 값이 손상됐거나 항목이 빠져 있어도 안전한 값으로 보정
 export function sanitizeKiln(raw) {
   if (!raw || typeof raw !== 'object') return null;
@@ -37,10 +41,17 @@ export function sanitizeKiln(raw) {
   if (!name) return null;
   let digits = parseInt(raw.digits, 10);
   if (!(digits >= MIN_DIGITS && digits <= MAX_DIGITS)) digits = DEFAULT_DIGITS;
+  const roiLandscape = copyRoi(raw.roiLandscape);
+  const roiPortrait = copyRoi(raw.roiPortrait);
   return {
     id: typeof raw.id === 'string' && raw.id ? raw.id : makeId(),
     name,
-    roi: isValidRoi(raw.roi) ? { x: raw.roi.x, y: raw.roi.y, w: raw.roi.w, h: raw.roi.h } : null,
+    // 방향별 영역 (해당 방향 video 원본 프레임 기준 비율)
+    roiLandscape,
+    roiPortrait,
+    // 방향 구분 전 버전에서 저장한 영역. 저장 당시 방향을 알 수 없어,
+    // 카메라가 켜졌을 때 그 방향에 영역이 없으면 그 방향의 영역으로 옮김 (adoptLegacyRoi)
+    roi: copyRoi(raw.roi),
     digits,
     polarity: raw.polarity === 'dark' ? 'dark' : DEFAULT_POLARITY,
     redLedMode: raw.redLedMode === true,
@@ -160,6 +171,18 @@ export function createKilnManager(els, hooks) {
     } else {
       flushSave();
     }
+  }
+
+  // 방향 구분 전 영역(roi)을 현재 방향의 영역으로 옮김. 이미 그 방향에 영역이 있으면 옛 값은 버림
+  // 옮겼으면 true
+  function adoptLegacyRoi(orientation) {
+    const k = current();
+    if (!k || !k.roi || !orientation) return false;
+    const key = orientation === 'portrait' ? 'roiPortrait' : 'roiLandscape';
+    const patch = { roi: null };
+    if (!k[key]) patch[key] = k.roi;
+    update(patch);
+    return !!patch[key];
   }
 
   // ===== 선택 =====
@@ -323,5 +346,5 @@ export function createKilnManager(els, hooks) {
   populateOptions();
   bindEvents();
 
-  return { load, current, update, select, render, hasKilns: () => kilns.length > 0 };
+  return { load, current, update, select, render, adoptLegacyRoi, hasKilns: () => kilns.length > 0 };
 }

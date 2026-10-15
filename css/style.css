@@ -341,6 +341,21 @@ select { -webkit-appearance: none; appearance: none; padding-right: 40px;
   color: var(--primary);
 }
 
+/* ===== 디버그 정보 (?debug=1 일 때만 생성) ===== */
+.debug-info {
+  position: fixed;
+  top: calc(env(safe-area-inset-top) + 4px);
+  right: calc(env(safe-area-inset-right) + 4px);
+  z-index: 50;
+  padding: 4px 6px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #9fffa0;
+  font: 11px/1.35 ui-monospace, Menlo, monospace;
+  white-space: pre;
+  pointer-events: none;
+}
+
 footer {
   margin-top: 20px;
   text-align: center;
