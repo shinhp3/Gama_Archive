@@ -1,11 +1,14 @@
 // ===== 진입점 =====
 // 화면 요소를 찾아 각 모듈을 연결하고, 탭 전환과 이벤트 처리를 담당
 
-import { APP_VERSION, PREVIEW_INTERVAL_MS } from './config.js?v=0.2.1';
-import { initDb } from './db.js?v=0.2.1';
-import { createCamera } from './camera.js?v=0.2.1';
-import { createRoiEditor } from './roi.js?v=0.2.1';
-import { createKilnManager } from './kilns.js?v=0.2.1';
+import { APP_VERSION, PREVIEW_INTERVAL_MS, LIVE_READ_MS } from './config.js?v=0.3.0';
+import { initDb } from './db.js?v=0.3.0';
+import { createCamera } from './camera.js?v=0.3.0';
+import { createRoiEditor } from './roi.js?v=0.3.0';
+import { createKilnManager } from './kilns.js?v=0.3.0';
+import { readKilnFrame, createLiveDisplay } from './reading.js?v=0.3.0';
+import { createCalibrationPanel } from './calibration.js?v=0.3.0';
+import { segmentQuads } from './recognizer.js?v=0.3.0';
 
 const TABS = ['record', 'history'];
 const ROI_RESET_MESSAGE = '화면 방향이 바뀌어 영역이 초기화되었습니다. 영역 버튼을 눌러 영역을 다시 지정해 주세요.';
@@ -44,6 +47,27 @@ function getElements() {
     kilnSettings: $('kilnSettings'),
     digitsSelect: $('digitsSelect'),
     intervalSelect: $('intervalSelect'),
+    liveTemp: $('liveTemp'),
+    liveConf: $('liveConf'),
+    liveReason: $('liveReason'),
+    calib: {
+      panel: $('kilnSettings'),
+      expectedInput: $('expectedInput'),
+      calibSummary: $('calibSummary'),
+      calibMatch: $('calibMatch'),
+      binaryBox: $('binaryBox'),
+      binaryCanvas: $('binaryCanvas'),
+      calibTableWrap: $('calibTableWrap'),
+      calibRows: $('calibRows'),
+      redLedInput: $('redLedInput'),
+      polaritySelect: $('polaritySelect'),
+      thresholdInput: $('thresholdInput'),
+      thresholdValue: $('thresholdValue'),
+      shearInput: $('shearInput'),
+      shearValue: $('shearValue'),
+      segOnInput: $('segOnInput'),
+      segOnValue: $('segOnValue')
+    },
     appVersion: $('appVersion')
   };
 }
@@ -92,9 +116,26 @@ function startApp() {
     }
   );
 
+  const live = createLiveDisplay(els);
+  const calib = createCalibrationPanel(els.calib, {
+    getKiln: () => kilns.current(),
+    update: kilns.update,
+    onSettingsChange: readNow
+  });
+
   function refreshCameraView() {
     roi.scheduleDraw();
     roi.updatePreview();
+    readNow();
+  }
+
+  // 현재 프레임을 판독해 현재 인식값·보정 패널·영상 위 샘플 위치를 갱신
+  function readNow() {
+    const k = kilns.current();
+    const read = readKilnFrame(camera, k);
+    live.show(read.result, read.reason);
+    calib.show(read.result, read.reason);
+    roi.setSamples(read.result && calib.isOpen() ? segmentQuads(read.result, k.shear) : null);
   }
 
   // 카메라 영상 프레임 방향 (영상이 없으면 null). iPad는 회전하면 프레임 가로·세로도 바뀜
@@ -173,6 +214,7 @@ function startApp() {
   // ===== 가마 =====
   function handleKilnChange(switched) {
     updateRoiButton();
+    calib.render();
     if (switched) {
       roi.cancelDrag();
       const k = kilns.current();
@@ -274,6 +316,9 @@ function startApp() {
       new window.ResizeObserver(() => { roi.scheduleDraw(); }).observe(els.videoWrap);
     }
 
+    // 판독 보정 패널을 열면 바로 판독해 결과와 샘플 위치 표시, 닫으면 샘플 위치 숨김
+    els.calib.panel.addEventListener('toggle', readNow);
+
     // 다른 앱에 다녀오면 iOS가 영상을 멈추는 경우가 있어 다시 재생
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) return;
@@ -290,6 +335,7 @@ function startApp() {
   initDb()
     .then(() => kilns.load())
     .then(() => {
+      calib.render();
       refreshCameraView();
       if (!kilns.hasKilns()) {
         showMessage('"추가"를 눌러 가마를 등록하세요.', 'info');
@@ -304,6 +350,9 @@ function startApp() {
     checkOrientation();
     roi.updatePreview();
   }, PREVIEW_INTERVAL_MS);
+
+  // 현재 인식값 갱신
+  setInterval(readNow, LIVE_READ_MS);
 }
 
 startApp();

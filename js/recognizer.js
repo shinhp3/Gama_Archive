@@ -1,7 +1,7 @@
 // ===== 7세그먼트 판독기 =====
 // DOM에 의존하지 않는 순수 함수 모음. ImageData(또는 같은 모양의 { width, height, data } 객체)를 받아 판독 결과를 반환
 
-import { SEGMENTS, PATTERN_TO_DIGIT } from './config.js?v=0.2.1';
+import { SEGMENTS, PATTERN_TO_DIGIT } from './config.js?v=0.3.0';
 
 function clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
 
@@ -99,9 +99,11 @@ export function readDigit(bin, W, H, cx0, cx1, onRatio) {
     st = 'fail';       // 표에 없는 패턴
   }
   return {
+    value: ch,              // 인식한 숫자 문자 (' ' = 빈 자리, '?' = 실패)
     char: ch,
     state: st,
     pattern: key,
+    segmentRatios: ratios,  // 세그먼트별 켜진 픽셀 비율 (a~g)
     ratios,
     on,
     rects,
@@ -114,9 +116,13 @@ export function readDigit(bin, W, H, cx0, cx1, onRatio) {
 /**
  * ROI 이미지에서 7세그먼트 숫자를 판독
  * @param {{ width: number, height: number, data: Uint8ClampedArray }} imageData ROI만 잘라낸 RGBA 이미지
- * @param {{ digits: number, redMode: boolean, polarity: string, thresholdOffset: number, skew: number, onRatio: number }} options 가마 설정
+ * @param {{ digits: number, redLedMode: boolean, polarity: 'bright'|'dark', thresholdOffset: number,
+ *           shear: number, segOnRatio: number }} kiln 가마 설정
+ * @returns {{ temp: number|null, confidence: number, digits: Array<{ value: string, segmentRatios: object }>,
+ *             ok: boolean, text: string, reason: string, binary: Uint8Array, width: number, height: number,
+ *             otsu: number, threshold: number }}
  */
-export function recognize(imageData, options) {
+export function recognize(imageData, kiln) {
   const W = imageData.width;
   const H = imageData.height;
   const data = imageData.data;
@@ -130,7 +136,7 @@ export function recognize(imageData, options) {
     const r = data[j];
     const g = data[j + 1];
     const b = data[j + 2];
-    let val = options.redMode ? r - (g + b) / 2 : 0.299 * r + 0.587 * g + 0.114 * b;
+    let val = kiln.redLedMode ? r - (g + b) / 2 : 0.299 * r + 0.587 * g + 0.114 * b;
     val = clamp(Math.round(val), 0, 255);
     gray[i] = val;
     hist[val]++;
@@ -138,8 +144,8 @@ export function recognize(imageData, options) {
 
   // 3. 이진화 (Otsu 자동 임계값 + 수동 보정, 어두운 숫자면 반전). 1 = 숫자(켜진 픽셀)
   const otsu = otsuThreshold(hist, n);
-  const threshold = clamp(otsu + options.thresholdOffset, 0, 255);
-  const darkDigits = options.polarity === 'dark';
+  const threshold = clamp(otsu + (kiln.thresholdOffset || 0), 0, 255);
+  const darkDigits = kiln.polarity === 'dark';
   const bin = new Uint8Array(n);
   for (let i = 0; i < n; i++) {
     const bright = gray[i] > threshold;
@@ -147,13 +153,14 @@ export function recognize(imageData, options) {
   }
 
   // 4. 기울기 보정 후 자릿수만큼 균등 분할
-  const sheared = shearBinary(bin, W, H, options.skew);
+  const sheared = shearBinary(bin, W, H, kiln.shear || 0);
+  const count = Math.max(1, kiln.digits || 1);
   const digits = [];
-  for (let i = 0; i < options.digits; i++) {
-    const cx0 = Math.round(i * W / options.digits);
-    const cx1 = Math.round((i + 1) * W / options.digits);
+  for (let i = 0; i < count; i++) {
+    const cx0 = Math.round(i * W / count);
+    const cx1 = Math.round((i + 1) * W / count);
     // 5~6. 자릿수별 세그먼트 판독 → 숫자 변환
-    digits.push(readDigit(sheared, W, H, cx0, cx1, options.onRatio));
+    digits.push(readDigit(sheared, W, H, cx0, cx1, kiln.segOnRatio));
   }
 
   // 7. 자릿수 합치기 (앞쪽 빈 자리만 허용)
@@ -177,6 +184,7 @@ export function recognize(imageData, options) {
 
   const res = {
     ok: false,
+    temp: null,
     value: null,
     text,
     reason: '',
@@ -198,6 +206,39 @@ export function recognize(imageData, options) {
   } else {
     res.ok = true;
     res.value = parseInt(text.trim(), 10);
+    res.temp = res.value;
   }
   return res;
+}
+
+/**
+ * 판독 결과의 세그먼트 샘플 위치를 원래(기울기 보정 전) ROI 기준 비율 좌표의 사각형(평행사변형)으로 변환
+ * 영상 위에 덧그려 샘플 위치가 숫자 획에 맞는지 눈으로 확인할 때 사용
+ * @returns {Array<{ on: boolean, pts: Array<{x: number, y: number}> }>} pts: 왼쪽 위부터 시계 방향 4점 (0~1)
+ */
+export function segmentQuads(result, shearDeg) {
+  const W = result.width;
+  const H = result.height;
+  const t = shearDeg ? Math.tan(shearDeg * Math.PI / 180) : 0;
+  const cy = (H - 1) / 2;
+  // 보정된 이미지의 x는 원본의 x + shift(y) 위치에서 가져온 값 (shearBinary 참고)
+  const shift = (y) => (cy - y) * t;
+  const quads = [];
+  result.digits.forEach((dg) => {
+    SEGMENTS.forEach((s) => {
+      const r = dg.rects[s.id];
+      const sTop = shift(r.y0);
+      const sBottom = shift(r.y1);
+      quads.push({
+        on: !!dg.on[s.id],
+        pts: [
+          { x: (r.x0 + sTop) / W, y: r.y0 / H },
+          { x: (r.x1 + sTop) / W, y: r.y0 / H },
+          { x: (r.x1 + sBottom) / W, y: r.y1 / H },
+          { x: (r.x0 + sBottom) / W, y: r.y1 / H }
+        ]
+      });
+    });
+  });
+  return quads;
 }

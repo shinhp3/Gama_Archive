@@ -1,6 +1,6 @@
 // ===== 앱 전체에서 쓰는 상수 =====
 
-export const APP_VERSION = 'v0.2.1';
+export const APP_VERSION = 'v0.3.0';
 
 // ===== 저장소 =====
 export const DB_NAME = 'kiln-recorder';
@@ -36,6 +36,10 @@ export const PREVIEW_MAX_W = 800;      // 영역 확대 미리보기 최대 크�
 export const PREVIEW_MAX_H = 300;
 
 // ===== 7세그먼트 판독 =====
+export const READ_MAX_W = 480;         // 판독할 때 ROI를 이 너비 이하로 줄여서 처리 (속도)
+export const LIVE_READ_MS = 1000;      // 기록 화면 현재 인식값 갱신 주기
+export const CONF_HIGH = 0.7;          // 신뢰도 표시 색 기준 (이상이면 높음)
+export const CONF_LOW = 0.4;           // (미만이면 낮음)
 // 7세그먼트 샘플 영역 (자릿수 셀 대비 비율). 순서는 a~g 고정 (패턴 문자열 생성 순서)
 export const SEGMENTS = [
   { id: 'a', x0: 0.20, x1: 0.80, y0: 0.04, y1: 0.16 }, // 위

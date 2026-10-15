@@ -1,7 +1,7 @@
 // ===== 영역(ROI) 지정 =====
 // 오버레이 그리기, 터치/마우스 드래그, 좌표 변환, 영역 확대 미리보기
 
-import { HANDLE_RADIUS, HANDLE_HIT, MIN_ROI_PX, ROI_COLOR, PREVIEW_MAX_W, PREVIEW_MAX_H } from './config.js?v=0.2.1';
+import { HANDLE_RADIUS, HANDLE_HIT, MIN_ROI_PX, ROI_COLOR, PREVIEW_MAX_W, PREVIEW_MAX_H } from './config.js?v=0.3.0';
 
 function clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
 function round5(v) { return Math.round(v * 100000) / 100000; }
@@ -96,6 +96,7 @@ export function createRoiEditor(els, deps) {
   let editable = false;     // 영역 편집 가능 여부 (영역 버튼으로 켜고 끔)
   let drag = null;          // 진행 중인 드래그 정보
   let drawQueued = false;   // 오버레이 다시 그리기 예약 여부
+  let samples = null;       // 영역 위에 덧그릴 세그먼트 샘플 위치 (판독 보정 중일 때만)
   let lastVideoW = 0;       // 영상 해상도 변화 감지용 (회전 시 가로/세로가 바뀜)
   let lastVideoH = 0;
 
@@ -175,6 +176,24 @@ export function createRoiEditor(els, deps) {
     ctx.lineWidth = 3;
     ctx.strokeStyle = ROI_COLOR;
     ctx.strokeRect(r.x, r.y, r.w, r.h);
+
+    // 세그먼트 샘플 위치 (켜짐 = 초록, 꺼짐 = 흰색). 영역을 옮기는 중에는 위치가 맞지 않으므로 생략
+    if (samples && !(drag && drag.moved)) {
+      ctx.lineWidth = 1;
+      samples.forEach((q) => {
+        ctx.beginPath();
+        q.pts.forEach((pt, i) => {
+          const x = r.x + pt.x * r.w;
+          const y = r.y + pt.y * r.h;
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        });
+        ctx.closePath();
+        ctx.fillStyle = q.on ? 'rgba(40, 220, 90, 0.4)' : 'rgba(255, 255, 255, 0.18)';
+        ctx.fill();
+        ctx.strokeStyle = q.on ? 'rgba(40, 220, 90, 0.95)' : 'rgba(255, 255, 255, 0.6)';
+        ctx.stroke();
+      });
+    }
 
     // 모서리 핸들 (편집 가능할 때만)
     if (editable) {
@@ -330,6 +349,13 @@ export function createRoiEditor(els, deps) {
     return editable;
   }
 
+  // 세그먼트 샘플 위치 지정 (null이면 그리지 않음). pts는 영역 기준 비율 좌표
+  function setSamples(list) {
+    if (!list && !samples) return;
+    samples = list;
+    scheduleDraw();
+  }
+
   // ===== 영역 확대 미리보기 (주기적으로 호출) =====
   function updatePreview() {
     const size = camera.videoSize();
@@ -379,6 +405,7 @@ export function createRoiEditor(els, deps) {
     onPointerUp,
     setEditable,
     isEditable,
+    setSamples,
     updatePreview
   };
 }

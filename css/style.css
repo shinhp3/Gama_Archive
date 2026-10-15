@@ -232,6 +232,132 @@ select { -webkit-appearance: none; appearance: none; padding-right: 40px;
 }
 .elapsed { font-variant-numeric: tabular-nums; }
 
+/* ===== 현재 인식값 ===== */
+.reading-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px 28px;
+}
+.reading-block { display: flex; flex-direction: column; min-width: 0; }
+.reading-label { font-size: 15px; color: var(--muted); }
+.reading-value {
+  font-size: 56px;
+  font-weight: 700;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.reading-value-sub { font-size: 34px; }
+.reading-value .is-empty { color: var(--muted); }
+.reading-unit { margin-left: 4px; font-size: 0.42em; font-weight: 600; color: var(--muted); }
+.reading-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 8px;
+}
+.reading-reason {
+  margin: 8px 0 0;
+  font-size: 15px;
+  color: var(--muted);
+}
+/* 신뢰도 색: 높음 초록 / 보통 주황 / 낮음 빨강 */
+.conf[data-level="high"] { color: var(--ok-text); }
+.conf[data-level="mid"] { color: #c77700; }
+.conf[data-level="low"] { color: var(--danger); }
+
+/* ===== 판독 보정 ===== */
+.calib {
+  margin-top: 6px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+.calib-summary { margin: 0 0 8px; }
+.calib-summary .muted-inline { color: var(--muted); font-size: 15px; }
+.calib-reason { margin-top: 4px; font-size: 15px; color: var(--danger); }
+.calib-match { margin: 0 0 10px; font-weight: 600; }
+.calib-match.ok { color: var(--ok-text); }
+.calib-match.bad { color: var(--danger); }
+
+.binary-box {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 12px;
+  padding: 6px;
+  background: #000;
+  border-radius: 10px;
+}
+.binary-box canvas {
+  display: block;
+  max-width: 100%;
+  max-height: 180px;
+  width: auto;
+  height: auto;
+  image-rendering: pixelated;
+}
+
+.table-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  margin-bottom: 14px;
+}
+.calib-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  white-space: nowrap;
+}
+.calib-table th,
+.calib-table td {
+  padding: 6px 6px;
+  border-bottom: 1px solid var(--border);
+}
+.calib-table th { color: var(--muted); font-weight: 600; }
+.calib-table .seg-on { font-weight: 700; color: var(--ok-text); }
+.calib-table .seg-off { color: var(--muted); }
+.calib-table .ok { color: var(--ok-text); font-weight: 600; }
+.calib-table .bad { color: var(--danger); font-weight: 600; }
+.calib-table .muted-inline { color: var(--muted); }
+
+.switch-field {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+.switch-field input[type="checkbox"] {
+  width: 28px;
+  height: 28px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  flex: none;
+  accent-color: var(--primary);
+}
+
+.range-field { display: block; margin-bottom: 14px; }
+.range-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.range-head output { font-weight: 700; font-variant-numeric: tabular-nums; }
+.range-field input[type="range"] {
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  accent-color: var(--primary);
+  touch-action: pan-y;
+}
+
 /* ===== 가마 관리 ===== */
 .kiln-bar { margin-bottom: 10px; }
 .name-form { margin-top: 14px; }

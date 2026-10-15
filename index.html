@@ -8,8 +8,8 @@
   <meta name="format-detection" content="telephone=no">
   <title>가마 온도 기록</title>
   <!-- 파일을 바꿀 때마다 ?v= 값을 올려야 아이패드가 예전 파일을 캐시에서 쓰지 않음 (js의 import 경로와 config.js의 APP_VERSION도 같이) -->
-  <link rel="stylesheet" href="css/style.css?v=0.2.1">
-  <script type="module" src="js/main.js?v=0.2.1"></script>
+  <link rel="stylesheet" href="css/style.css?v=0.3.0">
+  <script type="module" src="js/main.js?v=0.3.0"></script>
 </head>
 <body>
   <div class="page">
@@ -77,11 +77,30 @@
             </div>
           </div>
         </section>
+
+        <!-- 현재 인식값 -->
+        <section class="card reading-card" aria-live="off">
+          <div class="reading-row">
+            <div class="reading-block">
+              <span class="reading-label">현재 인식값</span>
+              <span class="reading-value"><span id="liveTemp" class="is-empty">—</span><span class="reading-unit">°C</span></span>
+            </div>
+            <div class="reading-block reading-block-sub">
+              <span class="reading-label">확정 온도</span>
+              <span class="reading-value reading-value-sub"><span id="confirmedTemp" class="is-empty">—</span><span class="reading-unit">°C</span></span>
+            </div>
+          </div>
+          <div class="reading-meta">
+            <span class="status-label">신뢰도</span>
+            <strong id="liveConf" class="conf">—</strong>
+          </div>
+          <p id="liveReason" class="reading-reason" hidden></p>
+        </section>
       </aside>
 
       <div class="record-extra">
         <details id="kilnSettings" class="card fold" hidden>
-          <summary>가마 설정</summary>
+          <summary>판독 설정 · 보정</summary>
           <label class="field">
             <span class="field-label">숫자 자릿수</span>
             <select id="digitsSelect"></select>
@@ -90,6 +109,56 @@
             <span class="field-label">판독 주기</span>
             <select id="intervalSelect"></select>
           </label>
+
+          <div class="calib">
+            <label class="field">
+              <span class="field-label">가마 표시창의 실제 숫자 (비교용)</span>
+              <input id="expectedInput" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" autocomplete="off" placeholder="예: 1234">
+            </label>
+
+            <p id="calibSummary" class="calib-summary"></p>
+            <p id="calibMatch" class="calib-match" hidden></p>
+
+            <div id="binaryBox" class="binary-box" hidden>
+              <canvas id="binaryCanvas"></canvas>
+            </div>
+
+            <div id="calibTableWrap" class="table-scroll" hidden>
+              <table class="calib-table">
+                <thead>
+                  <tr>
+                    <th>자리</th><th>인식</th><th>실제</th><th>판정</th>
+                    <th>a</th><th>b</th><th>c</th><th>d</th><th>e</th><th>f</th><th>g</th>
+                  </tr>
+                </thead>
+                <tbody id="calibRows"></tbody>
+              </table>
+            </div>
+
+            <label class="switch-field">
+              <input id="redLedInput" type="checkbox">
+              <span>빨간 LED 모드 (빨간 숫자만 골라냄)</span>
+            </label>
+            <label class="field">
+              <span class="field-label">숫자 극성</span>
+              <select id="polaritySelect">
+                <option value="bright">밝은 숫자 (어두운 바탕)</option>
+                <option value="dark">어두운 숫자 (밝은 바탕)</option>
+              </select>
+            </label>
+            <label class="range-field">
+              <span class="range-head"><span class="field-label">임계값 보정</span><output id="thresholdValue">0</output></span>
+              <input id="thresholdInput" type="range" step="1" value="0">
+            </label>
+            <label class="range-field">
+              <span class="range-head"><span class="field-label">기울기 보정</span><output id="shearValue">0°</output></span>
+              <input id="shearInput" type="range" step="0.5" value="0">
+            </label>
+            <label class="range-field">
+              <span class="range-head"><span class="field-label">켜짐 기준</span><output id="segOnValue">40%</output></span>
+              <input id="segOnInput" type="range" step="1" value="40">
+            </label>
+          </div>
         </details>
 
         <details class="card fold">
