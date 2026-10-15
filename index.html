@@ -8,10 +8,10 @@
   <meta name="format-detection" content="telephone=no">
   <title>가마 온도 기록</title>
   <!-- 파일을 바꿀 때마다 ?v= 값을 올려야 아이패드가 예전 파일을 캐시에서 쓰지 않음 (js의 import 경로와 config.js의 APP_VERSION도 같이) -->
-  <link rel="stylesheet" href="css/style.css?v=0.3.5">
+  <link rel="stylesheet" href="css/style.css?v=0.3.6">
   <!-- 숫자 인식 엔진 Tesseract.js (버전 고정, config.js의 TESSERACT_* 경로와 같은 버전). 이미지는 브라우저 안에서만 처리 -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@7.0.0/dist/tesseract.min.js" integrity="sha384-2BQ3U3OdKOb0Uczxqr41I9UvZkzr4V9Hv8uSzMMZAlmhsFClvdZX5wi5fDCzG+tM" crossorigin="anonymous" async></script>
-  <script type="module" src="js/main.js?v=0.3.5"></script>
+  <script type="module" src="js/main.js?v=0.3.6"></script>
 </head>
 <body>
   <div class="page">
@@ -112,7 +112,7 @@
         <section class="card reading-card" aria-live="off">
           <div class="reading-row">
             <div class="reading-block">
-              <span class="reading-label">현재 인식값</span>
+              <span class="reading-label">현재 인식값 (검증 통과)</span>
               <span class="reading-value"><span id="liveTemp" class="is-empty">—</span><span class="reading-unit">°C</span></span>
             </div>
             <div class="reading-block reading-block-sub">
@@ -122,10 +122,12 @@
           </div>
           <div class="reading-meta">
             <span class="meta-item"><span class="status-label">인식 방식</span> <strong id="liveEngine">—</strong></span>
-            <span class="meta-item"><span class="status-label">신뢰도</span> <strong id="liveConf" class="conf">—</strong></span>
+            <span class="meta-item"><span class="status-label">OCR 신뢰도</span> <strong id="liveConf" class="conf">—</strong></span>
+            <span class="meta-item"><span class="status-label">검증</span> <strong id="liveValid" class="valid-state">—</strong></span>
             <span id="liveState" class="engine-state">—</span>
           </div>
           <p id="liveReason" class="reading-reason"></p>
+          <button id="validResetBtn" type="button" class="small-btn" hidden>표시창 확인 완료 · 기준 온도 다시 확인</button>
         </section>
       </aside>
 

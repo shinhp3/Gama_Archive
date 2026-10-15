@@ -279,6 +279,15 @@ select { -webkit-appearance: none; appearance: none; padding-right: 40px;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* 온도 급변 경고는 잘리지 않게 여러 줄로 */
+.reading-reason.is-warning { white-space: normal; color: var(--danger); font-weight: 600; }
+/* 시간 변화 검증 상태 (OCR 신뢰도와 별개) */
+.valid-state[data-state="normal"] { color: var(--ok-text); }
+.valid-state[data-state="suspect"],
+.valid-state[data-state="initializing"] { color: #b26a00; }
+.valid-state[data-state="unavailable"],
+.valid-state[data-state="warn"] { color: var(--danger); }
+#validResetBtn { margin-top: 6px; }
 /* 신뢰도 색: 높음 초록 / 보통 주황 / 낮음 빨강 */
 .conf[data-level="high"] { color: var(--ok-text); }
 .conf[data-level="mid"] { color: #c77700; }

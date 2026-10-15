@@ -9,11 +9,11 @@ import {
   DEFAULT_DIGIT_ASPECT, MIN_DIGIT_ASPECT, MAX_DIGIT_ASPECT, MIN_ZOOM, MAX_ZOOM,
   DEFAULT_GUIDE_WIDTH_RATIO, MIN_GUIDE_WIDTH_RATIO, MAX_GUIDE_WIDTH_RATIO, MAX_ROTATION_DEG, ROTATION_STEP_DEG,
   RECOGNITION_MODES, DEFAULT_RECOGNITION_MODE, OCR_PREPROCESS_OPTIONS, DEFAULT_OCR_PREPROCESS
-} from './config.js?v=0.3.5';
+} from './config.js?v=0.3.6';
 import {
   getKilns, putKiln, deleteKiln, getPref, setPref, removePref,
   readLegacyKilns, clearLegacyKilns
-} from './db.js?v=0.3.5';
+} from './db.js?v=0.3.6';
 
 const SAVE_DELAY_MS = 400; // 슬라이더처럼 값이 연속으로 바뀔 때 모았다가 저장하는 시간
 

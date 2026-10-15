@@ -5,9 +5,9 @@
 import {
   SEGMENTS, THRESHOLD_OFFSET_LIMIT, SHEAR_LIMIT, MIN_SEG_ON_RATIO, MAX_SEG_ON_RATIO,
   DEFAULT_DIGIT_ASPECT, MIN_DIGIT_ASPECT, MAX_DIGIT_ASPECT, OCR_PREPROCESS_OPTIONS, DEFAULT_OCR_PREPROCESS
-} from './config.js?v=0.3.5';
-import { confidenceText, confidenceLevel, recognitionMode, isReadResult } from './reading.js?v=0.3.5';
-import { VARIANT_LABELS } from './ocrPreprocess.js?v=0.3.5';
+} from './config.js?v=0.3.6';
+import { confidenceText, confidenceLevel, recognitionMode, isReadResult, validationLabel } from './reading.js?v=0.3.6';
+import { VARIANT_LABELS } from './ocrPreprocess.js?v=0.3.6';
 
 const DIAG_IMAGE_MAX_H = 120; // 진단 이미지 표시 높이 (CSS px 기준 캔버스 크기)
 
@@ -172,6 +172,14 @@ export function createCalibrationPanel(els, deps) {
     }
     if (!result.ok && result.reason) {
       els.calibSummary.appendChild(cell('div', result.reason, 'calib-reason'));
+    }
+    // 시간 변화 검증 (인식 신뢰도와 별개): 위 인식 결과는 원시값, 기록 화면 현재 인식값은 검증을 통과한 값
+    const v = result.validation;
+    if (v) {
+      const why = v.warning || (v.status === 'unavailable' ? '' : v.reason);
+      els.calibSummary.appendChild(cell('div', '시간 변화 검증: ' + validationLabel(v) +
+        (typeof v.validatedTemp === 'number' ? ' (' + v.validatedTemp + '°C 통과)' : ' (통과한 온도 없음)') +
+        (why ? ' — ' + why : ''), 'calib-reason'));
     }
 
     if (result.engine === 'ocr') {

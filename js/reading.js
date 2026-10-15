@@ -3,12 +3,13 @@
 // OCR은 오래 걸리므로 한 번에 하나만 실행하고, 가마·설정이 바뀌거나 카메라가 꺼진 뒤 늦게 끝난 결과는 버림
 
 import {
-  READ_MAX_W, CONF_HIGH, CONF_LOW, JUMP_WARN_DEG, JUMP_COMPARE_MS, FRAME_SETTLE_MS
-} from './config.js?v=0.3.5';
-import { kilnSourceRegion, frameBlockReason } from './roi.js?v=0.3.5';
-import { recognize } from './recognizer.js?v=0.3.5';
-import { judgeOcr } from './ocr.js?v=0.3.5';
-import { variantOrder } from './ocrPreprocess.js?v=0.3.5';
+  READ_MAX_W, CONF_HIGH, CONF_LOW, FRAME_SETTLE_MS
+} from './config.js?v=0.3.6';
+import { createValidatorState, validateReading } from './temperature-validator.js?v=0.3.6';
+import { kilnSourceRegion, frameBlockReason } from './roi.js?v=0.3.6';
+import { recognize } from './recognizer.js?v=0.3.6';
+import { judgeOcr } from './ocr.js?v=0.3.6';
+import { variantOrder } from './ocrPreprocess.js?v=0.3.6';
 
 export const ENGINE_LABELS = { ocr: 'OCR', sevenSegment: '7세그먼트' };
 
@@ -76,7 +77,7 @@ export function createReader(deps) {
   let lastStartAt = 0;       // 마지막 OCR 시작 시각
   let settleKey = '';        // 영상 크기가 확정됐는지 확인용
   let settleAt = 0;
-  const lastGood = new Map(); // 가마 id → 직전 판독 성공 { temp, at } (비교용으로만 사용)
+  const validators = new Map(); // 가마 id → 시간 변화 검증 상태
 
   function now() {
     return (window.performance && performance.now) ? performance.now() : Date.now();
@@ -95,18 +96,23 @@ export function createReader(deps) {
     deps.onResult(res);
   }
 
-  // 직전 판독값과 비교만 해서 크게 바뀌었으면 표시 (온도를 바꾸거나 이전 값으로 대체하지 않음)
-  function markJump(res, kilnId) {
-    if (!res.ok) return res;
-    const t = Date.now();
-    const prev = lastGood.get(kilnId);
-    if (prev && t - prev.at <= JUMP_COMPARE_MS) {
-      res.prevTemp = prev.temp;
-      res.delta = res.temp - prev.temp;
-      res.jump = Math.abs(res.delta) > JUMP_WARN_DEG;
-    }
-    lastGood.set(kilnId, { temp: res.temp, at: t });
+  // 인식 결과에 시간 변화 검증 결과(res.validation)를 붙임. res.temp는 인식한 원시값 그대로 둠
+  // at: 판독한 프레임 시각 (Date.now 기준)
+  function validate(res, kilnId, at) {
+    const out = validateReading(validators.get(kilnId), {
+      rawTemp: res.ok ? res.temp : null,
+      confidence: typeof res.confidence === 'number' ? res.confidence : null,
+      at
+    });
+    validators.set(kilnId, out.state);
+    res.validation = out.result;
     return res;
+  }
+
+  // 지금 가마의 검증을 처음부터 다시 (급변 경고가 계속될 때 사용자가 표시창을 확인한 뒤 누름)
+  function resetValidation() {
+    const k = deps.getKiln();
+    if (k) validators.set(k.id, createValidatorState());
   }
 
   // 카메라 시작·회전 직후 영상 크기가 확정될 때까지 기다림
@@ -121,12 +127,13 @@ export function createReader(deps) {
   }
 
   function readSevenSegment(k) {
+    const at = Date.now();
     const read = readKilnFrame(camera, k);
-    if (!read.result) return statusResult('sevenSegment', 'fail', read.reason);
+    if (!read.result) return validate(statusResult('sevenSegment', 'fail', read.reason), k.id, at);
     const r = read.result;
     r.engine = 'sevenSegment';
     r.status = r.ok ? 'ok' : 'fail';
-    return markJump(r, k.id);
+    return validate(r, k.id, at);
   }
 
   // OCR 한 번: 기본 전처리로 먼저 읽고, 실패했을 때만 다른 전처리를 차례로 시험
@@ -173,7 +180,7 @@ export function createReader(deps) {
       result.elapsedMs = Math.round(now() - t0);
       result.attempts = attempts;
       result.source = source;
-      publish(markJump(result, kilnId));
+      publish(validate(result, kilnId, lastStartAt));
     }
     deps.onActivity();
   }
@@ -219,10 +226,11 @@ export function createReader(deps) {
     lastStartAt = 0;
   }
 
-  // 다른 가마로 바뀜: 이전 가마 결과를 지우고 처음부터
+  // 다른 가마로 바뀜: 이전 가마 결과와 검증 기준을 지우고 처음부터
   function reset() {
     invalidate();
     settleKey = '';
+    validators.clear();
     publish(statusResult(recognitionMode(deps.getKiln()), 'waiting', '판독 대기 중'));
     deps.onActivity();
   }
@@ -233,20 +241,37 @@ export function createReader(deps) {
     tick();
   }
 
-  return { tick, invalidate, reset, requestNow, activity };
+  return { tick, invalidate, reset, requestNow, activity, resetValidation };
+}
+
+// 검증 상태 표시 문구
+export function validationLabel(v) {
+  if (!v) return '—';
+  if (v.status === 'suspect') return v.persistent ? '급변 경고' : '확인 중';
+  if (v.status === 'normal') return '정상';
+  if (v.status === 'initializing') return '기준 확인 중';
+  return '판독 실패';
 }
 
 /**
  * 기록 화면의 현재 인식값 표시
  * @param {{ liveTemp: HTMLElement, liveConf: HTMLElement, liveReason: HTMLElement,
- *   liveEngine: HTMLElement, liveState: HTMLElement }} els
+ *   liveEngine: HTMLElement, liveState: HTMLElement, liveValid: HTMLElement, validResetBtn: HTMLElement }} els
  */
 export function createLiveDisplay(els) {
-  // 인식값이 없거나 유효하지 않으면 온도를 표시하지 않음
+  // 현재 인식값은 시간 변화 검증을 통과한 온도만 표시 (실패·확인 중이면 이전 값을 남기지 않고 비움)
   function show(res) {
-    const ok = !!(res && res.ok);
-    els.liveTemp.textContent = ok ? String(res.temp) : '—';
+    const v = res && res.validation;
+    const temp = v ? v.validatedTemp : null;
+    const ok = typeof temp === 'number';
+    els.liveTemp.textContent = ok ? String(temp) : '—';
     els.liveTemp.classList.toggle('is-empty', !ok);
+
+    // 검증 상태 (OCR 신뢰도와 별개)
+    els.liveValid.textContent = validationLabel(v);
+    if (v) els.liveValid.dataset.state = v.persistent ? 'warn' : v.status;
+    else delete els.liveValid.dataset.state;
+    els.validResetBtn.hidden = !(v && v.persistent);
 
     if (isReadResult(res) && typeof res.confidence === 'number') {
       els.liveConf.textContent = confidenceText(res.confidence);
@@ -257,10 +282,14 @@ export function createLiveDisplay(els) {
     }
 
     // 이유 줄은 비워 둘 뿐 숨기지 않음: 줄이 생겼다 없어지면 아래 카메라 영상이 밀려 확대/이동 중인 손가락 아래에서 움직임
+    // 급변 경고는 그사이 판독 실패가 끼어도 정상으로 돌아올 때까지 유지
     let why = '';
-    if (!ok) why = (res && res.reason) || '';
-    else if (res.jump) why = '직전 판독값(' + res.prevTemp + '°C)보다 크게 바뀌었습니다. 확인 필요';
+    if (!v) why = (res && res.reason) || '';
+    else if (v.warning) why = v.warning;
+    else if (v.status === 'unavailable') why = res.reason || v.reason;
+    else if (v.status === 'initializing') why = v.reason;
     els.liveReason.textContent = why;
+    els.liveReason.classList.toggle('is-warning', !!(v && v.warning));
   }
 
   function setActivity(a) {

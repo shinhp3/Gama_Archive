@@ -1,6 +1,6 @@
 // ===== 앱 전체에서 쓰는 상수 =====
 
-export const APP_VERSION = 'v0.3.5';
+export const APP_VERSION = 'v0.3.6';
 
 // ===== 저장소 =====
 export const DB_NAME = 'kiln-recorder';
@@ -54,8 +54,15 @@ export const RECOGNITION_MODES = ['ocr', 'sevenSegment']; // OCR(Tesseract.js) |
 export const DEFAULT_RECOGNITION_MODE = 'ocr';
 export const TEMP_MIN = 0;             // 정상 온도 범위 (벗어나면 판독 실패)
 export const TEMP_MAX = 1400;
-export const JUMP_WARN_DEG = 80;       // 직전 판독값보다 이만큼 넘게 바뀌면 "확인 필요" 표시 (온도는 그대로 둠)
-export const JUMP_COMPARE_MS = 120000; // 이보다 오래된 직전 판독값과는 비교하지 않음
+// ===== 시간 변화 검증 (temperature-validator.js) =====
+// 허용 변화량 = 실제 경과 시간 × 초당 허용 변화 (5초에 20°C), 단 아래 최소·최대 사이
+export const VALID_RATE_DEG_PER_SEC = 4;
+export const VALID_MIN_DELTA = 10;            // 판독 간격이 아주 짧아도 이만큼은 허용 (표시 흔들림)
+export const VALID_MAX_DELTA = 300;           // 판독이 오래 끊겼다가 다시 읽어도 이보다 큰 변화는 이상치 후보
+export const VALID_INIT_CONFIRM_COUNT = 2;    // 처음에 서로 이어지는 판독이 이만큼 모여야 기준 온도 확립
+export const VALID_RECHECK_COUNT = 2;         // 급변값이 이후 이만큼 더 반복되면 "급변 지속" 경고 (기준은 그대로)
+export const VALID_CANDIDATE_TOLERANCE = 10;  // 급변 후보끼리 같은 값으로 볼 오차 (±°C)
+export const VALID_HISTORY_SIZE = 30;         // 분석용으로 남겨 두는 최근 원시 판독 수
 export const FRAME_SETTLE_MS = 800;    // 카메라 시작·회전 후 영상 크기가 이 시간 동안 그대로여야 판독 시작
 
 // ===== OCR (Tesseract.js, 버전 고정. index.html의 script 태그 버전과 같아야 함) =====

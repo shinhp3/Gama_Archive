@@ -1,16 +1,16 @@
 // ===== 진입점 =====
 // 화면 요소를 찾아 각 모듈을 연결하고, 탭 전환과 이벤트 처리를 담당
 
-import { APP_VERSION, PREVIEW_INTERVAL_MS, LIVE_READ_MS, CAMERA_IDEAL_W, CAMERA_IDEAL_H } from './config.js?v=0.3.5';
-import { initDb } from './db.js?v=0.3.5';
-import { createCamera } from './camera.js?v=0.3.5';
-import { createRoiEditor, kilnSourceRegion } from './roi.js?v=0.3.5';
-import { createKilnManager } from './kilns.js?v=0.3.5';
-import { createReader, createLiveDisplay, recognitionMode } from './reading.js?v=0.3.5';
-import { createOcrEngine } from './ocr.js?v=0.3.5';
-import { createOcrPreprocessor } from './ocrPreprocess.js?v=0.3.5';
-import { createCalibrationPanel } from './calibration.js?v=0.3.5';
-import { segmentQuads } from './recognizer.js?v=0.3.5';
+import { APP_VERSION, PREVIEW_INTERVAL_MS, LIVE_READ_MS, CAMERA_IDEAL_W, CAMERA_IDEAL_H } from './config.js?v=0.3.6';
+import { initDb } from './db.js?v=0.3.6';
+import { createCamera } from './camera.js?v=0.3.6';
+import { createRoiEditor, kilnSourceRegion } from './roi.js?v=0.3.6';
+import { createKilnManager } from './kilns.js?v=0.3.6';
+import { createReader, createLiveDisplay, recognitionMode } from './reading.js?v=0.3.6';
+import { createOcrEngine } from './ocr.js?v=0.3.6';
+import { createOcrPreprocessor } from './ocrPreprocess.js?v=0.3.6';
+import { createCalibrationPanel } from './calibration.js?v=0.3.6';
+import { segmentQuads } from './recognizer.js?v=0.3.6';
 
 const TABS = ['record', 'history'];
 const ROI_RESET_MESSAGE = '화면 방향이 바뀌어 영역이 초기화되었습니다. 영역 버튼을 눌러 숫자를 노란 틀에 다시 맞춰 주세요.';
@@ -82,6 +82,8 @@ function getElements() {
     liveReason: $('liveReason'),
     liveEngine: $('liveEngine'),
     liveState: $('liveState'),
+    liveValid: $('liveValid'),
+    validResetBtn: $('validResetBtn'),
     calib: {
       panel: $('kilnSettings'),
       modeSelect: $('modeSelect'),
@@ -438,6 +440,12 @@ function startApp() {
 
     // 영역 지정(영상 확대/이동) 모드 켜기/끄기
     els.roiEditBtn.addEventListener('click', () => setRoiEditing(!roi.isEditable()));
+    // 급변 경고가 계속될 때: 사용자가 표시창을 직접 확인한 뒤 기준 온도를 처음부터 다시 확립
+    els.validResetBtn.addEventListener('click', () => {
+      reader.resetValidation();
+      els.validResetBtn.hidden = true;
+      readNow();
+    });
 
     // 영상 크기 정보가 준비되거나 바뀌면(회전 시 프레임 가로·세로가 바뀜) 방향 확인 후 다시 그림
     ['loadedmetadata', 'playing', 'resize'].forEach((ev) => {
