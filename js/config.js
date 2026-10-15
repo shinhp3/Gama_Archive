@@ -1,6 +1,6 @@
 // ===== 앱 전체에서 쓰는 상수 =====
 
-export const APP_VERSION = 'v0.3.1';
+export const APP_VERSION = 'v0.3.2';
 
 // ===== 저장소 =====
 export const DB_NAME = 'kiln-recorder';
@@ -44,9 +44,44 @@ export const PREVIEW_INTERVAL_MS = 1000; // 영역 확대 미리보기 갱신 �
 export const PREVIEW_MAX_W = 800;      // 영역 확대 미리보기 최대 크기 (캔버스 내부 해상도)
 export const PREVIEW_MAX_H = 300;
 
+// ===== 숫자 인식 방식 =====
+export const RECOGNITION_MODES = ['ocr', 'sevenSegment']; // OCR(Tesseract.js) | 기존 7세그먼트 판독
+export const DEFAULT_RECOGNITION_MODE = 'ocr';
+export const TEMP_MIN = 0;             // 정상 온도 범위 (벗어나면 판독 실패)
+export const TEMP_MAX = 1400;
+export const JUMP_WARN_DEG = 80;       // 직전 판독값보다 이만큼 넘게 바뀌면 "확인 필요" 표시 (온도는 그대로 둠)
+export const JUMP_COMPARE_MS = 120000; // 이보다 오래된 직전 판독값과는 비교하지 않음
+export const FRAME_SETTLE_MS = 800;    // 카메라 시작·회전 후 영상 크기가 이 시간 동안 그대로여야 판독 시작
+
+// ===== OCR (Tesseract.js, 버전 고정. index.html의 script 태그 버전과 같아야 함) =====
+export const TESSERACT_VERSION = '7.0.0';
+export const TESSERACT_WORKER_PATH = 'https://cdn.jsdelivr.net/npm/tesseract.js@7.0.0/dist/worker.min.js';
+export const TESSERACT_CORE_PATH = 'https://cdn.jsdelivr.net/npm/tesseract.js-core@7.0.0';  // 기기에 맞는 wasm(SIMD 등)을 자동 선택
+// 7세그먼트 글꼴로 학습한 Tesseract 숫자 모델 (ssd_int, 약 1.4MB, Apache-2.0). 커밋 고정.
+// 일반 영어 모델(eng)은 떨어진 세그먼트를 숫자로 잘 읽지 못함 (합성 7세그먼트 시험에서 대부분 실패)
+export const TESSERACT_LANG_PATH = 'https://cdn.jsdelivr.net/gh/Shreeshrii/tessdata_ssd@e493a10a4bf81632506cf24ba99d83854afff9f6';
+export const OCR_LANG = 'ssd_int';
+export const OCR_LANG_GZIP = false;      // 위 저장소의 파일은 .traineddata (gzip 아님)
+export const OCR_WHITELIST = '0123456789';
+export const OCR_PSM_SINGLE_LINE = '7';  // Tesseract 페이지 분할 모드: 한 줄
+export const OCR_MIN_CONFIDENCE = 0.4;   // 이보다 낮으면 숫자를 읽었어도 판독 실패로 처리
+export const OCR_INIT_TIMEOUT_MS = 90000;      // 엔진 준비(파일 내려받기 포함) 제한 시간
+export const OCR_RECOGNIZE_TIMEOUT_MS = 20000; // 한 번 인식 제한 시간 (넘으면 엔진을 다시 준비)
+// OCR 입력 이미지 전처리
+export const OCR_PREPROCESS_OPTIONS = ['auto', 'red', 'gray', 'contrast']; // 자동 | 빨간 LED 강조 이진화 | 흑백 이진화 | 대비 조정 원본
+export const DEFAULT_OCR_PREPROCESS = 'auto';
+// OCR 입력 숫자 높이. 작은 ROI는 확대, 큰 ROI는 축소해 이 높이로 맞춤
+// (합성 7세그먼트 시험에서 48~64px가 가장 잘 읽혔고, 3배 확대한 192px는 오히려 나빴음)
+export const OCR_TARGET_H = 64;
+export const OCR_PAD_RATIO = 0.25;     // 상하좌우 흰 여백 (OCR 입력 높이 대비)
+export const OCR_CLOSE_RATIO = 0.02;   // 세그먼트 사이 틈 메우기 반경 (OCR 입력 높이 대비)
+export const OCR_THICKEN_RATIO = 1 / 64; // 이진화 후 획 굵히기 반경 (64px에서 1px)
+export const OCR_SATURATED_R = 240;    // 빨간 LED 중심이 하얗게 포화된 픽셀 판정 (R, G, B 모두 높음)
+export const OCR_SATURATED_GB = 180;
+
 // ===== 7세그먼트 판독 =====
 export const READ_MAX_W = 480;         // 판독할 때 ROI를 이 너비 이하로 줄여서 처리 (속도)
-export const LIVE_READ_MS = 1000;      // 기록 화면 현재 인식값 갱신 주기
+export const LIVE_READ_MS = 1000;      // 판독 확인 주기 (7세그먼트는 매번 판독, OCR은 판독 주기마다)
 export const CONF_HIGH = 0.7;          // 신뢰도 표시 색 기준 (이상이면 높음)
 export const CONF_LOW = 0.4;           // (미만이면 낮음)
 // 7세그먼트 샘플 영역 (자릿수 셀 대비 비율). 순서는 a~g 고정 (패턴 문자열 생성 순서)

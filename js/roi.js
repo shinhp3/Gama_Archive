@@ -5,7 +5,7 @@
 import {
   ROI_COLOR, PREVIEW_MAX_W, PREVIEW_MAX_H, DEFAULT_DIGITS, DEFAULT_DIGIT_ASPECT,
   GUIDE_WIDTH_RATIO, GUIDE_MAX_HEIGHT_RATIO, MIN_ZOOM, MAX_ZOOM, ZOOM_STEP
-} from './config.js?v=0.3.1';
+} from './config.js?v=0.3.2';
 
 function clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
 function round3(v) { return Math.round(v * 1000) / 1000; }

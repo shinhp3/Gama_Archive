@@ -6,12 +6,13 @@ import {
   DEFAULT_DIGITS, MIN_DIGITS, MAX_DIGITS,
   READ_INTERVAL_OPTIONS, DEFAULT_READ_INTERVAL_SEC, DEFAULT_POLARITY,
   THRESHOLD_OFFSET_LIMIT, SHEAR_LIMIT, DEFAULT_SEG_ON_RATIO, MIN_SEG_ON_RATIO, MAX_SEG_ON_RATIO,
-  DEFAULT_DIGIT_ASPECT, MIN_DIGIT_ASPECT, MAX_DIGIT_ASPECT, MIN_ZOOM, MAX_ZOOM
-} from './config.js?v=0.3.1';
+  DEFAULT_DIGIT_ASPECT, MIN_DIGIT_ASPECT, MAX_DIGIT_ASPECT, MIN_ZOOM, MAX_ZOOM,
+  RECOGNITION_MODES, DEFAULT_RECOGNITION_MODE, OCR_PREPROCESS_OPTIONS, DEFAULT_OCR_PREPROCESS
+} from './config.js?v=0.3.2';
 import {
   getKilns, putKiln, deleteKiln, getPref, setPref, removePref,
   readLegacyKilns, clearLegacyKilns
-} from './db.js?v=0.3.1';
+} from './db.js?v=0.3.2';
 
 const SAVE_DELAY_MS = 400; // 슬라이더처럼 값이 연속으로 바뀔 때 모았다가 저장하는 시간
 
@@ -64,6 +65,10 @@ export function sanitizeKiln(raw) {
     shear: numInRange(raw.shear, -SHEAR_LIMIT, SHEAR_LIMIT, 0),
     segOnRatio: numInRange(raw.segOnRatio, MIN_SEG_ON_RATIO, MAX_SEG_ON_RATIO, DEFAULT_SEG_ON_RATIO),
     readIntervalSec: READ_INTERVAL_OPTIONS.indexOf(raw.readIntervalSec) >= 0 ? raw.readIntervalSec : DEFAULT_READ_INTERVAL_SEC,
+    // 인식 방식이 저장되지 않은 이전 가마는 OCR
+    recognitionMode: RECOGNITION_MODES.indexOf(raw.recognitionMode) >= 0 ? raw.recognitionMode : DEFAULT_RECOGNITION_MODE,
+    ocrPreprocess: OCR_PREPROCESS_OPTIONS.indexOf(raw.ocrPreprocess) >= 0 ? raw.ocrPreprocess : DEFAULT_OCR_PREPROCESS,
+    ocrSmooth: raw.ocrSmooth !== false,  // OCR 입력 확대 보간: true = 부드럽게, false = 최근접 이웃
     createdAt: isNum(raw.createdAt) ? raw.createdAt : Date.now()
   };
 }

@@ -8,8 +8,10 @@
   <meta name="format-detection" content="telephone=no">
   <title>가마 온도 기록</title>
   <!-- 파일을 바꿀 때마다 ?v= 값을 올려야 아이패드가 예전 파일을 캐시에서 쓰지 않음 (js의 import 경로와 config.js의 APP_VERSION도 같이) -->
-  <link rel="stylesheet" href="css/style.css?v=0.3.1">
-  <script type="module" src="js/main.js?v=0.3.1"></script>
+  <link rel="stylesheet" href="css/style.css?v=0.3.2">
+  <!-- 숫자 인식 엔진 Tesseract.js (버전 고정, config.js의 TESSERACT_* 경로와 같은 버전). 이미지는 브라우저 안에서만 처리 -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@7.0.0/dist/tesseract.min.js" integrity="sha384-2BQ3U3OdKOb0Uczxqr41I9UvZkzr4V9Hv8uSzMMZAlmhsFClvdZX5wi5fDCzG+tM" crossorigin="anonymous" async></script>
+  <script type="module" src="js/main.js?v=0.3.2"></script>
 </head>
 <body>
   <div class="page">
@@ -100,8 +102,9 @@
             </div>
           </div>
           <div class="reading-meta">
-            <span class="status-label">신뢰도</span>
-            <strong id="liveConf" class="conf">—</strong>
+            <span class="meta-item"><span class="status-label">인식 방식</span> <strong id="liveEngine">—</strong></span>
+            <span class="meta-item"><span class="status-label">신뢰도</span> <strong id="liveConf" class="conf">—</strong></span>
+            <span id="liveState" class="engine-state">—</span>
           </div>
           <p id="liveReason" class="reading-reason"></p>
         </section>
@@ -110,6 +113,13 @@
       <div class="record-extra">
         <details id="kilnSettings" class="card fold" hidden>
           <summary>판독 설정 · 보정</summary>
+          <label class="field">
+            <span class="field-label">인식 방식</span>
+            <select id="modeSelect">
+              <option value="ocr">OCR 숫자 인식 (기본)</option>
+              <option value="sevenSegment">7세그먼트 인식 (기존 방식)</option>
+            </select>
+          </label>
           <label class="field">
             <span class="field-label">숫자 자릿수</span>
             <select id="digitsSelect"></select>
@@ -132,20 +142,46 @@
             <p id="calibSummary" class="calib-summary"></p>
             <p id="calibMatch" class="calib-match" hidden></p>
 
-            <div id="binaryBox" class="binary-box" hidden>
-              <canvas id="binaryCanvas"></canvas>
+            <!-- OCR 진단 (OCR 모드) -->
+            <div id="ocrDiag" class="ocr-diag">
+              <dl class="diag-list">
+                <div><dt>엔진 상태</dt><dd><span id="engineState">대기</span> <button id="engineRetryBtn" type="button" class="small-btn" hidden>엔진 다시 준비</button></dd></div>
+                <div><dt>OCR 원본 텍스트</dt><dd id="ocrRaw">—</dd></div>
+                <div><dt>정제된 인식값</dt><dd id="ocrValue">—</dd></div>
+                <div><dt>신뢰도</dt><dd id="ocrConf">—</dd></div>
+                <div><dt>처리 시간</dt><dd id="ocrTime">—</dd></div>
+                <div><dt>전처리</dt><dd id="ocrVariant">—</dd></div>
+              </dl>
+              <p id="ocrAttempts" class="diag-attempts" hidden></p>
+              <div id="ocrImages" class="diag-images" hidden>
+                <figure>
+                  <figcaption>원본 ROI</figcaption>
+                  <div class="diag-img"><canvas id="ocrSourceCanvas"></canvas></div>
+                </figure>
+                <figure>
+                  <figcaption>OCR에 넘긴 이미지</figcaption>
+                  <div class="diag-img diag-img-light"><canvas id="ocrInputCanvas"></canvas></div>
+                </figure>
+              </div>
             </div>
 
-            <div id="calibTableWrap" class="table-scroll" hidden>
-              <table class="calib-table">
-                <thead>
-                  <tr>
-                    <th>자리</th><th>인식</th><th>실제</th><th>판정</th>
-                    <th>a</th><th>b</th><th>c</th><th>d</th><th>e</th><th>f</th><th>g</th>
-                  </tr>
-                </thead>
-                <tbody id="calibRows"></tbody>
-              </table>
+            <!-- 7세그먼트 진단 (7세그먼트 모드) -->
+            <div id="segDiag" hidden>
+              <div id="binaryBox" class="binary-box" hidden>
+                <canvas id="binaryCanvas"></canvas>
+              </div>
+
+              <div id="calibTableWrap" class="table-scroll" hidden>
+                <table class="calib-table">
+                  <thead>
+                    <tr>
+                      <th>자리</th><th>인식</th><th>실제</th><th>판정</th>
+                      <th>a</th><th>b</th><th>c</th><th>d</th><th>e</th><th>f</th><th>g</th>
+                    </tr>
+                  </thead>
+                  <tbody id="calibRows"></tbody>
+                </table>
+              </div>
             </div>
 
             <label class="switch-field">
@@ -163,14 +199,38 @@
               <span class="range-head"><span class="field-label">임계값 보정</span><output id="thresholdValue">0</output></span>
               <input id="thresholdInput" type="range" step="1" value="0">
             </label>
-            <label class="range-field">
-              <span class="range-head"><span class="field-label">기울기 보정</span><output id="shearValue">0°</output></span>
-              <input id="shearInput" type="range" step="0.5" value="0">
-            </label>
-            <label class="range-field">
-              <span class="range-head"><span class="field-label">켜짐 기준</span><output id="segOnValue">40%</output></span>
-              <input id="segOnInput" type="range" step="1" value="40">
-            </label>
+
+            <!-- OCR 전용 설정 -->
+            <div id="ocrOptions">
+              <label class="field">
+                <span class="field-label">OCR 전처리 방식</span>
+                <select id="ocrPreprocessSelect">
+                  <option value="auto">자동 (실패하면 다른 방식도 시험)</option>
+                  <option value="red">빨간 LED 강조 이진화</option>
+                  <option value="gray">흑백 이진화</option>
+                  <option value="contrast">대비 조정 원본</option>
+                </select>
+              </label>
+              <label class="field">
+                <span class="field-label">OCR 입력 확대 방식 (작은 영역을 키울 때)</span>
+                <select id="ocrSmoothSelect">
+                  <option value="smooth">부드럽게 보간</option>
+                  <option value="nearest">최근접 이웃</option>
+                </select>
+              </label>
+            </div>
+
+            <!-- 7세그먼트 전용 설정 -->
+            <div id="segOptions" hidden>
+              <label class="range-field">
+                <span class="range-head"><span class="field-label">기울기 보정</span><output id="shearValue">0°</output></span>
+                <input id="shearInput" type="range" step="0.5" value="0">
+              </label>
+              <label class="range-field">
+                <span class="range-head"><span class="field-label">켜짐 기준</span><output id="segOnValue">40%</output></span>
+                <input id="segOnInput" type="range" step="1" value="40">
+              </label>
+            </div>
           </div>
         </details>
 

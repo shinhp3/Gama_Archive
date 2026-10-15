@@ -1,14 +1,16 @@
 // ===== 진입점 =====
 // 화면 요소를 찾아 각 모듈을 연결하고, 탭 전환과 이벤트 처리를 담당
 
-import { APP_VERSION, PREVIEW_INTERVAL_MS, LIVE_READ_MS, CAMERA_IDEAL_W, CAMERA_IDEAL_H } from './config.js?v=0.3.1';
-import { initDb } from './db.js?v=0.3.1';
-import { createCamera } from './camera.js?v=0.3.1';
-import { createRoiEditor } from './roi.js?v=0.3.1';
-import { createKilnManager } from './kilns.js?v=0.3.1';
-import { readKilnFrame, createLiveDisplay } from './reading.js?v=0.3.1';
-import { createCalibrationPanel } from './calibration.js?v=0.3.1';
-import { segmentQuads } from './recognizer.js?v=0.3.1';
+import { APP_VERSION, PREVIEW_INTERVAL_MS, LIVE_READ_MS, CAMERA_IDEAL_W, CAMERA_IDEAL_H } from './config.js?v=0.3.2';
+import { initDb } from './db.js?v=0.3.2';
+import { createCamera } from './camera.js?v=0.3.2';
+import { createRoiEditor } from './roi.js?v=0.3.2';
+import { createKilnManager } from './kilns.js?v=0.3.2';
+import { createReader, createLiveDisplay, recognitionMode } from './reading.js?v=0.3.2';
+import { createOcrEngine } from './ocr.js?v=0.3.2';
+import { createOcrPreprocessor } from './ocrPreprocess.js?v=0.3.2';
+import { createCalibrationPanel } from './calibration.js?v=0.3.2';
+import { segmentQuads } from './recognizer.js?v=0.3.2';
 
 const TABS = ['record', 'history'];
 const ROI_RESET_MESSAGE = '화면 방향이 바뀌어 영역이 초기화되었습니다. 영역 버튼을 눌러 숫자를 노란 틀에 다시 맞춰 주세요.';
@@ -66,8 +68,28 @@ function getElements() {
     liveTemp: $('liveTemp'),
     liveConf: $('liveConf'),
     liveReason: $('liveReason'),
+    liveEngine: $('liveEngine'),
+    liveState: $('liveState'),
     calib: {
       panel: $('kilnSettings'),
+      modeSelect: $('modeSelect'),
+      ocrOptions: $('ocrOptions'),
+      segOptions: $('segOptions'),
+      ocrDiag: $('ocrDiag'),
+      segDiag: $('segDiag'),
+      ocrPreprocessSelect: $('ocrPreprocessSelect'),
+      ocrSmoothSelect: $('ocrSmoothSelect'),
+      engineState: $('engineState'),
+      engineRetryBtn: $('engineRetryBtn'),
+      ocrRaw: $('ocrRaw'),
+      ocrValue: $('ocrValue'),
+      ocrConf: $('ocrConf'),
+      ocrTime: $('ocrTime'),
+      ocrVariant: $('ocrVariant'),
+      ocrAttempts: $('ocrAttempts'),
+      ocrImages: $('ocrImages'),
+      ocrSourceCanvas: $('ocrSourceCanvas'),
+      ocrInputCanvas: $('ocrInputCanvas'),
       expectedInput: $('expectedInput'),
       calibSummary: $('calibSummary'),
       calibMatch: $('calibMatch'),
@@ -140,9 +162,23 @@ function startApp() {
     {
       camera,
       getKiln: () => kilns.current(),
-      onCommit: (patch, soon) => kilns.update(patch, soon)
+      onCommit: (patch, soon) => {
+        kilns.update(patch, soon);
+        reader.invalidate(); // 영역이 바뀌면 진행 중인 OCR 결과는 버림
+      }
     }
   );
+
+  // 숫자 인식: OCR 엔진(처음 필요할 때 한 번 준비) + 전처리 + 판독 조정기
+  const ocr = createOcrEngine({ onStateChange: handleEngineState });
+  const reader = createReader({
+    camera,
+    ocr,
+    preprocessor: createOcrPreprocessor(camera),
+    getKiln: () => kilns.current(),
+    onResult: handleReading,
+    onActivity: updateActivity
+  });
 
   const live = createLiveDisplay(els);
   const calib = createCalibrationPanel(els.calib, {
@@ -150,6 +186,12 @@ function startApp() {
     update: kilns.update,
     onSettingsChange: () => {
       roi.scheduleDraw(); // 자릿수 폭/높이 비율이 바뀌면 틀 모양과 영역도 다시 계산
+      reader.invalidate();
+      updateActivity();
+      readNow();
+    },
+    onRetryEngine: () => {
+      ocr.retry();
       readNow();
     }
   });
@@ -185,13 +227,32 @@ function startApp() {
     readNow();
   }
 
-  // 현재 프레임을 판독해 현재 인식값·보정 패널·영상 위 샘플 위치를 갱신
+  // 판독 주기를 기다리지 않고 바로 판독 (OCR이 진행 중이면 끝난 뒤)
   function readNow() {
+    reader.requestNow();
+  }
+
+  // 판독 결과를 현재 인식값·보정 패널·영상 위 샘플 위치(7세그먼트 보정 중일 때만)에 반영
+  function handleReading(res) {
     const k = kilns.current();
-    const read = readKilnFrame(camera, k);
-    live.show(read.result, read.reason);
-    calib.show(read.result, read.reason);
-    roi.setSamples(read.result && calib.isOpen() ? segmentQuads(read.result, k.shear) : null);
+    live.show(res);
+    calib.show(res);
+    const showSamples = k && res.engine === 'sevenSegment' && res.binary && calib.isOpen();
+    roi.setSamples(showSamples ? segmentQuads(res, k.shear) : null);
+  }
+
+  // 인식 방식·인식 중 여부·엔진 상태 표시
+  function updateActivity() {
+    const a = reader.activity();
+    live.setActivity(a);
+    calib.setEngineState(a);
+  }
+
+  function handleEngineState(state, message) {
+    updateActivity();
+    if (state === 'error' && recognitionMode(kilns.current()) === 'ocr') {
+      showMessage(message + ' "판독 설정 · 보정"에서 인식 방식을 "7세그먼트 인식"으로 바꿀 수 있습니다.', 'error');
+    }
   }
 
   // 카메라 영상 프레임 방향 (영상이 없으면 null). iPad는 회전하면 프레임 가로·세로도 바뀜
@@ -213,6 +274,7 @@ function startApp() {
     if (frameNow) lastFrame = frameNow;
     if (!rotated) return;
     roi.cancelGesture();
+    reader.invalidate();
     setRoiEditing(false);
     if (kilns.clearAllRois()) {
       showMessage(ROI_RESET_MESSAGE, 'error');
@@ -274,6 +336,7 @@ function startApp() {
     calib.render();
     if (switched) {
       roi.cancelGesture();
+      reader.reset(); // 이전 가마의 인식값을 지우고, 늦게 끝난 이전 가마 OCR 결과는 버림
       if (roi.isEditable()) roi.setEditable(true); // 영역 지정 중에 가마를 바꾸면 바뀐 가마도 지금 틀 위치로 지정
       const k = kilns.current();
       if (!k) {
@@ -298,11 +361,13 @@ function startApp() {
     } else {
       hideMessage();
     }
+    reader.invalidate(); // 카메라를 다시 켜면 판독 주기를 기다리지 않고 영상 크기가 확정되는 대로 판독
     roi.scheduleDraw();
   }
 
   function stopCamera() {
     camera.stop();
+    reader.invalidate(); // 진행 중인 OCR 결과는 버리고 새 판독은 시작하지 않음 (카메라 꺼짐)
     roi.cancelGesture();
     updateRoiButton();
     refreshCameraView();
@@ -358,14 +423,24 @@ function startApp() {
       new window.ResizeObserver(() => { roi.scheduleDraw(); }).observe(els.videoWrap);
     }
 
-    // 판독 보정 패널을 열면 바로 판독해 결과와 샘플 위치 표시, 닫으면 샘플 위치 숨김
-    els.calib.panel.addEventListener('toggle', readNow);
+    // 판독 보정 패널을 열면 마지막 결과를 바로 보여 주고 다시 판독, 닫으면 샘플 위치 숨김
+    els.calib.panel.addEventListener('toggle', () => {
+      calib.refresh();
+      if (!calib.isOpen()) roi.setSamples(null);
+      readNow();
+    });
 
     // 다른 앱에 다녀오면 iOS가 영상을 멈추는 경우가 있어 다시 재생
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) return;
       camera.resumeIfPaused();
       checkOrientation(); // 다른 앱에 있는 동안 회전했을 수 있음
+    });
+
+    // 페이지를 떠날 때 OCR 작업자 종료 (뒤로 가기로 돌아오면 필요할 때 다시 준비)
+    window.addEventListener('pagehide', () => {
+      reader.invalidate();
+      ocr.terminate();
     });
   }
 
@@ -378,6 +453,7 @@ function startApp() {
     .then(() => kilns.load())
     .then(() => {
       calib.render();
+      updateActivity();
       refreshCameraView();
       if (!kilns.hasKilns()) {
         showMessage('"추가"를 눌러 가마를 등록하세요.', 'info');
@@ -394,8 +470,8 @@ function startApp() {
     updateDebug();
   }, PREVIEW_INTERVAL_MS);
 
-  // 현재 인식값 갱신
-  setInterval(readNow, LIVE_READ_MS);
+  // 판독 확인 (7세그먼트는 매번 판독, OCR은 이전 작업이 끝났고 판독 주기가 지났을 때만)
+  setInterval(reader.tick, LIVE_READ_MS);
 }
 
 startApp();
