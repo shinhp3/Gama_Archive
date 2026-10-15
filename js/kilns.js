@@ -41,8 +41,19 @@ export function sanitizeKiln(raw) {
   if (!name) return null;
   let digits = parseInt(raw.digits, 10);
   if (!(digits >= MIN_DIGITS && digits <= MAX_DIGITS)) digits = DEFAULT_DIGITS;
-  const roiLandscape = copyRoi(raw.roiLandscape);
-  const roiPortrait = copyRoi(raw.roiPortrait);
+  let roiLandscape = copyRoi(raw.roiLandscape);
+  let roiPortrait = copyRoi(raw.roiPortrait);
+  let roi = copyRoi(raw.roi);
+  // 지정 당시 프레임 크기(roiFrame)가 함께 저장된 영역은 그 크기로 방향을 알 수 있으므로 해당 방향 영역으로 옮김
+  const f = raw.roiFrame;
+  if (roi && f && isNum(f.w) && isNum(f.h) && f.w > 0 && f.h > 0) {
+    if (f.w >= f.h) {
+      if (!roiLandscape) roiLandscape = roi;
+    } else if (!roiPortrait) {
+      roiPortrait = roi;
+    }
+    roi = null;
+  }
   return {
     id: typeof raw.id === 'string' && raw.id ? raw.id : makeId(),
     name,
@@ -51,7 +62,7 @@ export function sanitizeKiln(raw) {
     roiPortrait,
     // 방향 구분 전 버전에서 저장한 영역. 저장 당시 방향을 알 수 없어,
     // 카메라가 켜졌을 때 그 방향에 영역이 없으면 그 방향의 영역으로 옮김 (adoptLegacyRoi)
-    roi: copyRoi(raw.roi),
+    roi,
     digits,
     polarity: raw.polarity === 'dark' ? 'dark' : DEFAULT_POLARITY,
     redLedMode: raw.redLedMode === true,

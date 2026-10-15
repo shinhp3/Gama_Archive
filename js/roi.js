@@ -4,7 +4,13 @@
 
 import { HANDLE_RADIUS, HANDLE_HIT, MIN_ROI_PX, ROI_COLOR, PREVIEW_MAX_W, PREVIEW_MAX_H } from './config.js';
 
-export const NO_ROI_FOR_ORIENTATION = '이 방향에서는 영역이 지정되지 않았습니다. 설정에서 영역을 지정해 주세요';
+export const ROI_ORIENTATION_CHANGED = '화면 방향이 바뀌었습니다. 설정에서 이 방향의 영역을 다시 지정해 주세요';
+export const NO_ROI = '영역 지정 안 됨';
+
+// 현재 방향의 영역이 없을 때 안내 문구: 다른 방향에는 영역이 있으면 "방향이 바뀌었다"는 안내
+function noRoiMessage(kiln) {
+  return (kiln && (kiln.roiLandscape || kiln.roiPortrait || kiln.roi)) ? ROI_ORIENTATION_CHANGED : NO_ROI;
+}
 
 function clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
 function round5(v) { return Math.round(v * 100000) / 100000; }
@@ -91,7 +97,7 @@ export function currentSourceRect(kiln, video) {
 export function frameBlockReason(kiln, camera, video) {
   if (!kiln) return '가마 없음';
   if (!camera.isFrameReady()) return '카메라 꺼짐';
-  if (!roiFor(kiln, getVideoLayout(video).orientation)) return NO_ROI_FOR_ORIENTATION;
+  if (!roiFor(kiln, getVideoLayout(video).orientation)) return noRoiMessage(kiln);
   return null;
 }
 
@@ -197,9 +203,9 @@ export function createRoiEditor(els, deps) {
     const box = layout.box;
     const roi = displayedRoi(layout);
 
-    // 현재 방향의 영역이 없으면 영역을 숨기고 안내 문구 표시
+    // 현재 방향의 영역이 없으면 영역을 숨기고, 다른 방향에 영역이 있으면 다시 지정하라는 안내 표시
     if (!roi) {
-      drawNotice(ctx, box, NO_ROI_FOR_ORIENTATION);
+      if (noRoiMessage(k) === ROI_ORIENTATION_CHANGED) drawNotice(ctx, box, ROI_ORIENTATION_CHANGED);
       return;
     }
 
@@ -414,7 +420,7 @@ export function createRoiEditor(els, deps) {
     const roi = (k && camera.isFrameReady()) ? displayedRoi(layout) : null;
     if (!roi) {
       previewCanvas.hidden = true;
-      previewPlaceholder.textContent = frameBlockReason(k, camera, video) || NO_ROI_FOR_ORIENTATION;
+      previewPlaceholder.textContent = frameBlockReason(k, camera, video) || noRoiMessage(k);
       previewPlaceholder.hidden = false;
       return;
     }
