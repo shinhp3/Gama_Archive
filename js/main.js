@@ -4,16 +4,16 @@
 import { APP_VERSION, PREVIEW_INTERVAL_MS } from './config.js';
 import { initDb } from './db.js';
 import { createCamera } from './camera.js';
-import { createRoiEditor, getVideoLayout, roiKey, roiFor } from './roi.js';
+import { createRoiEditor, getVideoLayout, activeRoi, isRoiRotated, ROI_ORIENTATION_CHANGED } from './roi.js';
 import { createKilnManager } from './kilns.js';
 
 const TABS = ['record', 'history'];
 const RELAYOUT_LATE_MS = 300;   // iOS는 회전 직후 레이아웃/영상 크기가 늦게 바뀌므로 한 번 더 계산
 const DEBUG_INTERVAL_MS = 500;
 
-// 방향과 상관없이 영역이 하나라도 저장돼 있는지
+// 방향과 상관없이 영역이 저장돼 있는지
 function hasAnyRoi(k) {
-  return !!(k && (k.roiLandscape || k.roiPortrait || k.roi));
+  return !!(k && k.roi);
 }
 
 function fmtRect(r) {
@@ -57,8 +57,10 @@ function startApp() {
 
   // ===== 안내 메시지 =====
   let messageTimer = null;
+  let rotateNoticeShown = false; // 지금 안내 메시지가 "화면 방향이 바뀌었습니다" 안내인지
   function showMessage(text, type, autoHideMs) {
     clearTimeout(messageTimer);
+    rotateNoticeShown = false;
     els.message.textContent = text;
     els.message.className = 'message ' + (type || 'info');
     els.message.hidden = false;
@@ -68,6 +70,7 @@ function startApp() {
   }
   function hideMessage() {
     clearTimeout(messageTimer);
+    rotateNoticeShown = false;
     els.message.hidden = true;
   }
 
@@ -100,13 +103,39 @@ function startApp() {
   const debugEl = createDebugView();
 
   function refreshCameraView() {
-    // 방향 구분 전 영역은 실제 프레임 방향을 알게 된 시점에 그 방향의 영역으로 옮김
-    if (camera.isFrameReady()) {
-      kilns.adoptLegacyRoi(getVideoLayout(els.video).orientation);
-    }
+    const layout = getVideoLayout(els.video);
+    // 지정한 방향을 모르는 옛 영역은 실제 방향을 알게 된 시점의 방향으로 정함
+    if (camera.isFrameReady()) kilns.adoptLegacyRoi(layout);
+    fitVideoWrap(layout);
+    syncRotateNotice(layout);
     roi.scheduleDraw();
     roi.updatePreview();
     updateDebug();
+  }
+
+  // 영상 표시 칸을 영상 비율에 맞춰, 영상 바깥 검은 여백 없이 칸 끝까지 영역을 지정할 수 있게 함
+  let wrapRatio = '';
+  function fitVideoWrap(layout) {
+    const ratio = (camera.isRunning() && layout.videoW && layout.videoH)
+      ? (layout.videoW / layout.videoH).toFixed(4) : '';
+    if (ratio === wrapRatio) return;
+    wrapRatio = ratio;
+    if (ratio) {
+      els.videoWrap.style.setProperty('--frame-ratio', ratio);
+    } else {
+      els.videoWrap.style.removeProperty('--frame-ratio');
+    }
+  }
+
+  // 영역을 지정한 뒤 화면이 회전했으면 위쪽에 다시 지정하라는 안내를 띄우고, 다시 맞으면 내림
+  function syncRotateNotice(layout) {
+    const need = !roi.isEditable() && camera.isFrameReady() && isRoiRotated(kilns.current(), layout);
+    if (need && !rotateNoticeShown) {
+      showMessage(ROI_ORIENTATION_CHANGED, 'error');
+      rotateNoticeShown = true;
+    } else if (!need && rotateNoticeShown) {
+      hideMessage();
+    }
   }
 
   // 회전/크기 변화 직후, requestAnimationFrame 두 번 뒤, 약 300ms 뒤에 각각 다시 계산
@@ -139,11 +168,12 @@ function startApp() {
     const r = (v) => Math.round(v);
     const k = kilns.current();
     debugEl.textContent = [
-      '방향: ' + (L.orientation || '-'),
+      '방향: 영상 ' + (L.orientation || '-') + ' / 화면 ' + L.screen,
       'video: ' + L.videoW + '×' + L.videoH,
       'client: ' + L.clientW + '×' + L.clientH,
       'contain: ' + (L.box ? r(L.box.x) + ', ' + r(L.box.y) + ', ' + r(L.box.w) + '×' + r(L.box.h) : '-'),
-      'ROI(' + (L.orientation || '-') + '): ' + fmtRect(roiFor(k, L.orientation))
+      'ROI: ' + fmtRect(k && k.roi) + (k && k.roi ? ' (' + (k.roiOrientation || '-') + ' / ' + (k.roiScreen || '-') + ')' : ''),
+      '사용 중: ' + (activeRoi(k, L) ? '예' : '아니오')
     ].join('\n');
   }
 
@@ -174,6 +204,7 @@ function startApp() {
     } else {
       hideMessage();
     }
+    refreshCameraView();
   }
 
   // 카메라가 켜져 있고 가마가 있을 때만 영역 버튼 사용 가능
@@ -211,11 +242,9 @@ function startApp() {
     refreshCameraView();
   }
 
-  // 드래그한 방향의 영역만 저장
-  function handleRoiCommit(newRoi, orientation) {
-    const patch = {};
-    patch[roiKey(orientation)] = newRoi;
-    kilns.update(patch);
+  // 새 영역을 지정한 때의 방향과 함께 저장 (이전 영역은 덮어씀)
+  function handleRoiCommit(newRoi, view) {
+    kilns.update({ roi: newRoi, roiOrientation: view.orientation, roiScreen: view.screen });
     refreshCameraView();
   }
 
@@ -230,7 +259,7 @@ function startApp() {
     } else {
       hideMessage();
     }
-    roi.scheduleDraw();
+    refreshCameraView();
   }
 
   function stopCamera() {

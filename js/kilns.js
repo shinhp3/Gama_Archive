@@ -30,6 +30,8 @@ function isValidRoi(r) {
     r.x + r.w <= 1.0001 && r.y + r.h <= 1.0001;
 }
 
+function isOrientation(v) { return v === 'landscape' || v === 'portrait'; }
+
 function copyRoi(r) {
   return isValidRoi(r) ? { x: r.x, y: r.y, w: r.w, h: r.h } : null;
 }
@@ -41,28 +43,30 @@ export function sanitizeKiln(raw) {
   if (!name) return null;
   let digits = parseInt(raw.digits, 10);
   if (!(digits >= MIN_DIGITS && digits <= MAX_DIGITS)) digits = DEFAULT_DIGITS;
-  let roiLandscape = copyRoi(raw.roiLandscape);
-  let roiPortrait = copyRoi(raw.roiPortrait);
   let roi = copyRoi(raw.roi);
-  // 지정 당시 프레임 크기(roiFrame)가 함께 저장된 영역은 그 크기로 방향을 알 수 있으므로 해당 방향 영역으로 옮김
-  const f = raw.roiFrame;
-  if (roi && f && isNum(f.w) && isNum(f.h) && f.w > 0 && f.h > 0) {
-    if (f.w >= f.h) {
-      if (!roiLandscape) roiLandscape = roi;
-    } else if (!roiPortrait) {
-      roiPortrait = roi;
+  let roiOrientation = (roi && isOrientation(raw.roiOrientation)) ? raw.roiOrientation : null;
+  if (!roiOrientation) {
+    // 이전 버전의 방향별 영역(roiLandscape/roiPortrait)은 가로 영역을 우선해 하나로 합침
+    const f = raw.roiFrame;
+    if (copyRoi(raw.roiLandscape)) {
+      roi = copyRoi(raw.roiLandscape);
+      roiOrientation = 'landscape';
+    } else if (copyRoi(raw.roiPortrait)) {
+      roi = copyRoi(raw.roiPortrait);
+      roiOrientation = 'portrait';
+    } else if (roi && f && isNum(f.w) && isNum(f.h) && f.w > 0 && f.h > 0) {
+      roiOrientation = f.w >= f.h ? 'landscape' : 'portrait';
     }
-    roi = null;
   }
+  const roiScreen = roiOrientation ? (isOrientation(raw.roiScreen) ? raw.roiScreen : roiOrientation) : null;
   return {
     id: typeof raw.id === 'string' && raw.id ? raw.id : makeId(),
     name,
-    // 방향별 영역 (해당 방향 video 원본 프레임 기준 비율)
-    roiLandscape,
-    roiPortrait,
-    // 방향 구분 전 버전에서 저장한 영역. 저장 당시 방향을 알 수 없어,
-    // 카메라가 켜졌을 때 그 방향에 영역이 없으면 그 방향의 영역으로 옮김 (adoptLegacyRoi)
+    // 영역 (video 원본 프레임 기준 비율) 과 지정할 때의 영상 프레임/화면 방향.
+    // 방향을 모르는 옛 영역은 카메라가 처음 켜졌을 때의 방향으로 정함 (adoptLegacyRoi)
     roi,
+    roiOrientation,
+    roiScreen,
     digits,
     polarity: raw.polarity === 'dark' ? 'dark' : DEFAULT_POLARITY,
     redLedMode: raw.redLedMode === true,
@@ -184,16 +188,13 @@ export function createKilnManager(els, hooks) {
     }
   }
 
-  // 방향 구분 전 영역(roi)을 현재 방향의 영역으로 옮김. 이미 그 방향에 영역이 있으면 옛 값은 버림
-  // 옮겼으면 true
-  function adoptLegacyRoi(orientation) {
+  // 지정할 때의 방향을 모르는 옛 영역을 지금 방향(view = { orientation, screen })에서 지정한 것으로 정함
+  // 정했으면 true
+  function adoptLegacyRoi(view) {
     const k = current();
-    if (!k || !k.roi || !orientation) return false;
-    const key = orientation === 'portrait' ? 'roiPortrait' : 'roiLandscape';
-    const patch = { roi: null };
-    if (!k[key]) patch[key] = k.roi;
-    update(patch);
-    return !!patch[key];
+    if (!k || !k.roi || k.roiOrientation || !view || !view.orientation) return false;
+    update({ roiOrientation: view.orientation, roiScreen: view.screen });
+    return true;
   }
 
   // ===== 선택 =====

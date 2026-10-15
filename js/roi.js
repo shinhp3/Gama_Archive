@@ -1,15 +1,27 @@
 // ===== 영역(ROI) 지정 =====
 // 오버레이 그리기, 터치/마우스 드래그, 좌표 변환, 영역 확대 미리보기
-// 영역은 "현재 방향의 video 원본 프레임 기준 비율(0~1)"로 방향별(roiLandscape/roiPortrait)로 저장
+// 영역은 video 원본 프레임 기준 비율(0~1) 하나만 저장하고, 지정할 때의 방향(roiOrientation: 영상 프레임,
+// roiScreen: 화면)을 함께 기억. 화면이 회전해 방향이 달라지면 영역을 숨기고 다시 지정하라고 안내
 
 import { HANDLE_RADIUS, HANDLE_HIT, MIN_ROI_PX, ROI_COLOR, PREVIEW_MAX_W, PREVIEW_MAX_H } from './config.js';
 
-export const ROI_ORIENTATION_CHANGED = '화면 방향이 바뀌었습니다. 영역 버튼을 눌러 이 방향의 영역을 다시 지정해 주세요';
+export const ROI_ORIENTATION_CHANGED = '화면 방향이 바뀌었습니다. 영역 버튼을 눌러 영역을 다시 지정해 주세요';
 export const NO_ROI = '영역 지정 안 됨';
 
-// 현재 방향의 영역이 없을 때 안내 문구: 다른 방향에는 영역이 있으면 "방향이 바뀌었다"는 안내
+// 지금 쓸 수 있는 영역이 없을 때 안내 문구
 function noRoiMessage(kiln) {
-  return (kiln && (kiln.roiLandscape || kiln.roiPortrait || kiln.roi)) ? ROI_ORIENTATION_CHANGED : NO_ROI;
+  return (kiln && kiln.roi) ? ROI_ORIENTATION_CHANGED : NO_ROI;
+}
+
+/**
+ * 기기 화면 방향. iPad의 Split View처럼 창 모양이 바뀌는 경우와 구분하려고 기기 방향 정보를 먼저 사용
+ * @returns {'landscape'|'portrait'}
+ */
+export function screenOrientation() {
+  const so = window.screen && window.screen.orientation;
+  if (so && typeof so.type === 'string') return so.type.indexOf('portrait') === 0 ? 'portrait' : 'landscape';
+  if (typeof window.orientation === 'number') return Math.abs(window.orientation) === 90 ? 'landscape' : 'portrait';
+  return window.innerWidth >= window.innerHeight ? 'landscape' : 'portrait';
 }
 
 function clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
@@ -26,8 +38,10 @@ const CURSOR_CLASSES = {
 
 /**
  * 현재 video 상태로 contain 레이아웃을 매번 새로 계산 (캐시하지 않음)
- * @returns {{ orientation: 'landscape'|'portrait'|null, videoW, videoH, clientW, clientH,
- *             box: {x,y,w,h}|null }} box: video 요소 안에서 실제 영상이 그려진 사각형 (CSS px, 여백 제외)
+ * @returns {{ orientation: 'landscape'|'portrait'|null, screen: 'landscape'|'portrait', videoW, videoH,
+ *             clientW, clientH, box: {x,y,w,h}|null }}
+ *   orientation: 영상 프레임 방향, screen: 화면 방향,
+ *   box: video 요소 안에서 실제 영상이 그려진 사각형 (CSS px, 여백 제외)
  */
 export function getVideoLayout(video) {
   const videoW = video.videoWidth || 0;
@@ -42,18 +56,24 @@ export function getVideoLayout(video) {
     const h = videoH * scale;
     box = { x: (clientW - w) / 2, y: (clientH - h) / 2, w, h };
   }
-  return { orientation, videoW, videoH, clientW, clientH, box };
+  return { orientation, screen: screenOrientation(), videoW, videoH, clientW, clientH, box };
 }
 
-// 방향 → 가마 설정의 영역 항목 이름
-export function roiKey(orientation) {
-  return orientation === 'portrait' ? 'roiPortrait' : 'roiLandscape';
+// 드래그/영역을 지정한 때와 지금의 영상·화면 방향이 같은지
+function sameView(view, layout) {
+  return !!(view && layout && layout.orientation &&
+    view.orientation === layout.orientation && view.screen === layout.screen);
 }
 
-// 가마의 해당 방향 영역 (없으면 null)
-export function roiFor(kiln, orientation) {
-  if (!kiln || !orientation) return null;
-  return kiln[roiKey(orientation)] || null;
+// 지금 방향에서 쓸 수 있는 영역 (지정할 때와 방향이 다르면 null)
+export function activeRoi(kiln, layout) {
+  if (!kiln || !kiln.roi) return null;
+  return sameView({ orientation: kiln.roiOrientation, screen: kiln.roiScreen }, layout) ? kiln.roi : null;
+}
+
+// 영역을 지정한 뒤 화면이 회전해 지금은 쓸 수 없는 상태인지
+export function isRoiRotated(kiln, layout) {
+  return !!(kiln && kiln.roi && kiln.roiOrientation && layout && layout.orientation && !activeRoi(kiln, layout));
 }
 
 // 비율 ROI → 원본 프레임 픽셀 사각형
@@ -84,11 +104,11 @@ export function screenToNorm(p, layout) {
 
 /**
  * 판독/미리보기용으로 현재 프레임에서 잘라낼 원본 픽셀 사각형
- * 화면에 표시되는 영역과 항상 같은 값(현재 방향의 영역)을 사용. 잘라낼 수 없으면 null
+ * 화면에 표시되는 영역과 항상 같은 값을 사용. 잘라낼 수 없으면 null
  */
 export function currentSourceRect(kiln, video) {
   const layout = getVideoLayout(video);
-  const roi = roiFor(kiln, layout.orientation);
+  const roi = activeRoi(kiln, layout);
   if (!roi) return null;
   return roiToSource(roi, layout);
 }
@@ -97,7 +117,7 @@ export function currentSourceRect(kiln, video) {
 export function frameBlockReason(kiln, camera, video) {
   if (!kiln) return '가마 없음';
   if (!camera.isFrameReady()) return '카메라 꺼짐';
-  if (!roiFor(kiln, getVideoLayout(video).orientation)) return noRoiMessage(kiln);
+  if (!activeRoi(kiln, getVideoLayout(video))) return noRoiMessage(kiln);
   return null;
 }
 
@@ -139,7 +159,7 @@ function hitTest(p, layout, roi) {
 /**
  * @param {{ video: HTMLVideoElement, overlay: HTMLCanvasElement, previewCanvas: HTMLCanvasElement, previewPlaceholder: HTMLElement }} els
  * @param {{ camera: object, getKiln: Function, onMessage: Function, onCommit: Function }} deps
- *   onCommit(roi, orientation): 드래그가 끝나 해당 방향의 새 영역이 확정될 때
+ *   onCommit(roi, view): 드래그가 끝나 새 영역이 확정될 때. view = { orientation, screen } (지정한 때의 방향)
  */
 export function createRoiEditor(els, deps) {
   const { video, overlay, previewCanvas, previewPlaceholder } = els;
@@ -147,7 +167,7 @@ export function createRoiEditor(els, deps) {
   const overlayCtx = overlay.getContext('2d');
   const previewCtx = previewCanvas.getContext('2d');
 
-  let editable = false;     // 영역 편집 가능 여부 (설정 화면에서만 편집)
+  let editable = false;     // 영역 편집 가능 여부 (영역 버튼으로 켜고 끔)
   let drag = null;          // 진행 중인 드래그 정보
   let drawQueued = false;   // 오버레이 다시 그리기 예약 여부
 
@@ -163,10 +183,10 @@ export function createRoiEditor(els, deps) {
     return { x: clientX - r.left, y: clientY - r.top };
   }
 
-  // 드래그 중이면 임시 영역, 아니면 현재 방향의 저장된 영역
+  // 드래그 중이면 임시 영역, 아니면 지금 방향에서 쓸 수 있는 저장된 영역
   function displayedRoi(layout) {
-    if (drag && drag.moved && drag.roi && layout && drag.orientation === layout.orientation) return drag.roi;
-    return roiFor(deps.getKiln(), layout ? layout.orientation : null);
+    if (drag && drag.moved && drag.roi && sameView(drag, layout)) return drag.roi;
+    return activeRoi(deps.getKiln(), layout);
   }
 
   function cancelDrag() {
@@ -203,9 +223,9 @@ export function createRoiEditor(els, deps) {
     const box = layout.box;
     const roi = displayedRoi(layout);
 
-    // 현재 방향의 영역이 없으면 영역을 숨기고, 다른 방향에 영역이 있으면 다시 지정하라는 안내 표시
+    // 지정한 뒤 화면이 회전했으면 영역을 숨기고 다시 지정하라는 안내 표시
     if (!roi) {
-      if (noRoiMessage(k) === ROI_ORIENTATION_CHANGED) drawNotice(ctx, box, ROI_ORIENTATION_CHANGED);
+      if (isRoiRotated(k, layout)) drawNotice(ctx, box, ROI_ORIENTATION_CHANGED);
       return;
     }
 
@@ -302,7 +322,7 @@ export function createRoiEditor(els, deps) {
     }
     e.preventDefault();
 
-    const roi = roiFor(k, layout.orientation);
+    const roi = activeRoi(k, layout);
     const local = clientToLocal(e.clientX, e.clientY);
     const p = screenToNorm(local, layout);
     const hit = hitTest(local, layout, roi);
@@ -319,7 +339,9 @@ export function createRoiEditor(els, deps) {
       next = { mode: 'new', anchor: clampPoint(p) };
     }
     next.pointerId = e.pointerId;
-    next.orientation = layout.orientation; // 드래그 도중 방향이 바뀌면 취소하기 위해 기억
+    // 드래그 도중 방향이 바뀌면 취소하기 위해 기억
+    next.orientation = layout.orientation;
+    next.screen = layout.screen;
     next.roi = null;
     next.moved = false;
     drag = next;
@@ -337,7 +359,7 @@ export function createRoiEditor(els, deps) {
     e.preventDefault();
 
     const layout = currentLayout();
-    if (!layout || layout.orientation !== d.orientation) return;
+    if (!sameView(d, layout)) return;
     const p = screenToNorm(clientToLocal(e.clientX, e.clientY), layout);
 
     if (d.mode === 'move') {
@@ -362,9 +384,7 @@ export function createRoiEditor(els, deps) {
     const layout = currentLayout();
     const cancelled = e.type === 'pointercancel';
     // 드래그 도중 화면이 회전했으면 저장하지 않음
-    const sameOrientation = layout && layout.orientation === d.orientation;
-
-    if (!cancelled && k && sameOrientation && d.moved && d.roi) {
+    if (!cancelled && k && sameView(d, layout) && d.moved && d.roi) {
       if (d.roi.w * layout.box.w < MIN_ROI_PX || d.roi.h * layout.box.h < MIN_ROI_PX) {
         deps.onMessage('영역이 너무 작습니다. 조금 더 크게 드래그하세요.', 'error', 3000);
       } else {
@@ -373,7 +393,7 @@ export function createRoiEditor(els, deps) {
           y: round5(d.roi.y),
           w: round5(d.roi.w),
           h: round5(d.roi.h)
-        }, d.orientation);
+        }, { orientation: d.orientation, screen: d.screen });
       }
     }
     scheduleDraw();
@@ -391,7 +411,7 @@ export function createRoiEditor(els, deps) {
     const layout = currentLayout();
     let cursor = 'crosshair';
     if (layout) {
-      const roi = roiFor(deps.getKiln(), layout.orientation);
+      const roi = activeRoi(deps.getKiln(), layout);
       cursor = hitTest(clientToLocal(e.clientX, e.clientY), layout, roi).cursor;
     }
     setCursor(cursor);
