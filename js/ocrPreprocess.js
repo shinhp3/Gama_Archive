@@ -4,9 +4,9 @@
 
 import {
   OCR_TARGET_H, OCR_PAD_RATIO, OCR_CLOSE_RATIO, OCR_THICKEN_RATIO, OCR_SATURATED_R, OCR_SATURATED_GB
-} from './config.js?v=0.3.4';
-import { otsuThreshold } from './recognizer.js?v=0.3.4';
-import { kilnSourceRegion } from './roi.js?v=0.3.4';
+} from './config.js?v=0.3.5';
+import { otsuThreshold } from './recognizer.js?v=0.3.5';
+import { kilnSourceRegion } from './roi.js?v=0.3.5';
 
 // 전처리 방식 이름 (판독 보정 화면 표시용)
 export const VARIANT_LABELS = {

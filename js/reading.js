@@ -4,11 +4,11 @@
 
 import {
   READ_MAX_W, CONF_HIGH, CONF_LOW, JUMP_WARN_DEG, JUMP_COMPARE_MS, FRAME_SETTLE_MS
-} from './config.js?v=0.3.4';
-import { kilnSourceRegion, frameBlockReason } from './roi.js?v=0.3.4';
-import { recognize } from './recognizer.js?v=0.3.4';
-import { judgeOcr } from './ocr.js?v=0.3.4';
-import { variantOrder } from './ocrPreprocess.js?v=0.3.4';
+} from './config.js?v=0.3.5';
+import { kilnSourceRegion, frameBlockReason } from './roi.js?v=0.3.5';
+import { recognize } from './recognizer.js?v=0.3.5';
+import { judgeOcr } from './ocr.js?v=0.3.5';
+import { variantOrder } from './ocrPreprocess.js?v=0.3.5';
 
 export const ENGINE_LABELS = { ocr: 'OCR', sevenSegment: '7세그먼트' };
 

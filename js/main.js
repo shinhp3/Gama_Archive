@@ -1,16 +1,16 @@
 // ===== 진입점 =====
 // 화면 요소를 찾아 각 모듈을 연결하고, 탭 전환과 이벤트 처리를 담당
 
-import { APP_VERSION, PREVIEW_INTERVAL_MS, LIVE_READ_MS, CAMERA_IDEAL_W, CAMERA_IDEAL_H } from './config.js?v=0.3.4';
-import { initDb } from './db.js?v=0.3.4';
-import { createCamera } from './camera.js?v=0.3.4';
-import { createRoiEditor, kilnSourceRegion } from './roi.js?v=0.3.4';
-import { createKilnManager } from './kilns.js?v=0.3.4';
-import { createReader, createLiveDisplay, recognitionMode } from './reading.js?v=0.3.4';
-import { createOcrEngine } from './ocr.js?v=0.3.4';
-import { createOcrPreprocessor } from './ocrPreprocess.js?v=0.3.4';
-import { createCalibrationPanel } from './calibration.js?v=0.3.4';
-import { segmentQuads } from './recognizer.js?v=0.3.4';
+import { APP_VERSION, PREVIEW_INTERVAL_MS, LIVE_READ_MS, CAMERA_IDEAL_W, CAMERA_IDEAL_H } from './config.js?v=0.3.5';
+import { initDb } from './db.js?v=0.3.5';
+import { createCamera } from './camera.js?v=0.3.5';
+import { createRoiEditor, kilnSourceRegion } from './roi.js?v=0.3.5';
+import { createKilnManager } from './kilns.js?v=0.3.5';
+import { createReader, createLiveDisplay, recognitionMode } from './reading.js?v=0.3.5';
+import { createOcrEngine } from './ocr.js?v=0.3.5';
+import { createOcrPreprocessor } from './ocrPreprocess.js?v=0.3.5';
+import { createCalibrationPanel } from './calibration.js?v=0.3.5';
+import { segmentQuads } from './recognizer.js?v=0.3.5';
 
 const TABS = ['record', 'history'];
 const ROI_RESET_MESSAGE = '화면 방향이 바뀌어 영역이 초기화되었습니다. 영역 버튼을 눌러 숫자를 노란 틀에 다시 맞춰 주세요.';

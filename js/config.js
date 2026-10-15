@@ -1,6 +1,6 @@
 // ===== 앱 전체에서 쓰는 상수 =====
 
-export const APP_VERSION = 'v0.3.4';
+export const APP_VERSION = 'v0.3.5';
 
 // ===== 저장소 =====
 export const DB_NAME = 'kiln-recorder';
@@ -37,7 +37,7 @@ export const MAX_DIGIT_ASPECT = 1.2;
 export const DEFAULT_GUIDE_WIDTH_RATIO = 0.4; // 틀 폭 = 영상 영역 폭 × 이 값 (가마별로 조절, 저장값이 없으면 기본)
 export const MIN_GUIDE_WIDTH_RATIO = 0.2;
 export const MAX_GUIDE_WIDTH_RATIO = 0.8;
-export const GUIDE_WIDTH_STEP = 0.05;
+export const GUIDE_WIDTH_STEP = 0.01;
 export const MAX_ROTATION_DEG = 15;          // 틀 회전 보정 범위 -15° ~ +15° (양수 = 시계 방향)
 export const ROTATION_STEP_DEG = 0.5;
 export const GUIDE_MAX_HEIGHT_RATIO = 0.9;   // 틀 높이는 영상 영역 높이의 90%를 넘지 않게
