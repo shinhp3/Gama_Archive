@@ -1,7 +1,7 @@
 // ===== 카메라 =====
 // 후면 카메라 스트림 시작/중지, 영상 프레임에서 원하는 영역을 잘라내기
 
-import { CAMERA_IDEAL_W, CAMERA_IDEAL_H } from './config.js?v=0.3.2';
+import { CAMERA_IDEAL_W, CAMERA_IDEAL_H } from './config.js?v=0.3.3';
 
 const PERMISSION_ERRORS = ['NotAllowedError', 'PermissionDeniedError', 'SecurityError'];
 

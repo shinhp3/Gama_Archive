@@ -509,6 +509,7 @@ select { -webkit-appearance: none; appearance: none; padding-right: 40px;
   accent-color: var(--primary);
 }
 .zoom-step { font-size: 26px; font-weight: 600; flex: none; }
+.guide-label { flex: none; min-width: 44px; font-weight: 600; }
 .zoom-value {
   flex: none;
   min-width: 52px;

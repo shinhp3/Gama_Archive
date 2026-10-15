@@ -1,16 +1,16 @@
 // ===== 진입점 =====
 // 화면 요소를 찾아 각 모듈을 연결하고, 탭 전환과 이벤트 처리를 담당
 
-import { APP_VERSION, PREVIEW_INTERVAL_MS, LIVE_READ_MS, CAMERA_IDEAL_W, CAMERA_IDEAL_H } from './config.js?v=0.3.2';
-import { initDb } from './db.js?v=0.3.2';
-import { createCamera } from './camera.js?v=0.3.2';
-import { createRoiEditor } from './roi.js?v=0.3.2';
-import { createKilnManager } from './kilns.js?v=0.3.2';
-import { createReader, createLiveDisplay, recognitionMode } from './reading.js?v=0.3.2';
-import { createOcrEngine } from './ocr.js?v=0.3.2';
-import { createOcrPreprocessor } from './ocrPreprocess.js?v=0.3.2';
-import { createCalibrationPanel } from './calibration.js?v=0.3.2';
-import { segmentQuads } from './recognizer.js?v=0.3.2';
+import { APP_VERSION, PREVIEW_INTERVAL_MS, LIVE_READ_MS, CAMERA_IDEAL_W, CAMERA_IDEAL_H } from './config.js?v=0.3.3';
+import { initDb } from './db.js?v=0.3.3';
+import { createCamera } from './camera.js?v=0.3.3';
+import { createRoiEditor, roiToSource } from './roi.js?v=0.3.3';
+import { createKilnManager } from './kilns.js?v=0.3.3';
+import { createReader, createLiveDisplay, recognitionMode } from './reading.js?v=0.3.3';
+import { createOcrEngine } from './ocr.js?v=0.3.3';
+import { createOcrPreprocessor } from './ocrPreprocess.js?v=0.3.3';
+import { createCalibrationPanel } from './calibration.js?v=0.3.3';
+import { segmentQuads } from './recognizer.js?v=0.3.3';
 
 const TABS = ['record', 'history'];
 const ROI_RESET_MESSAGE = '화면 방향이 바뀌어 영역이 초기화되었습니다. 영역 버튼을 눌러 숫자를 노란 틀에 다시 맞춰 주세요.';
@@ -52,6 +52,9 @@ function getElements() {
     zoomInBtn: $('zoomInBtn'),
     zoomOutBtn: $('zoomOutBtn'),
     zoomResetBtn: $('zoomResetBtn'),
+    guideBar: $('guideBar'),
+    guideInput: $('guideInput'),
+    guideValue: $('guideValue'),
     debugInfo: $('debugInfo'),
     kilnSelect: $('kilnSelect'),
     addKilnBtn: $('addKilnBtn'),
@@ -157,7 +160,10 @@ function startApp() {
       zoomValue: els.zoomValue,
       zoomInBtn: els.zoomInBtn,
       zoomOutBtn: els.zoomOutBtn,
-      zoomResetBtn: els.zoomResetBtn
+      zoomResetBtn: els.zoomResetBtn,
+      guideBar: els.guideBar,
+      guideInput: els.guideInput,
+      guideValue: els.guideValue
     },
     {
       camera,
@@ -213,8 +219,14 @@ function startApp() {
     const v = roi.currentView();
     if (v) lines.push('배율 ' + v.zoom.toFixed(2) + ' · 중심 ' + v.cx.toFixed(4) + ', ' + v.cy.toFixed(4));
     const k = kilns.current();
+    if (k) lines.push('틀 폭 ' + Math.round(k.guideWidthRatio * 100) + '%');
     if (k && k.roi) {
       lines.push('영역 x ' + k.roi.x.toFixed(4) + ' y ' + k.roi.y.toFixed(4) + ' w ' + k.roi.w.toFixed(4) + ' h ' + k.roi.h.toFixed(4));
+      const size = camera.videoSize();
+      if (camera.isRunning() && size.width && size.height) {
+        const src = roiToSource(k.roi, size.width, size.height);
+        lines.push('영역 원본 해상도 ' + src.w + '×' + src.h + 'px (x ' + src.x + ', y ' + src.y + ')');
+      }
     } else {
       lines.push('영역 지정 안 됨');
     }

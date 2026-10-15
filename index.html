@@ -8,10 +8,10 @@
   <meta name="format-detection" content="telephone=no">
   <title>가마 온도 기록</title>
   <!-- 파일을 바꿀 때마다 ?v= 값을 올려야 아이패드가 예전 파일을 캐시에서 쓰지 않음 (js의 import 경로와 config.js의 APP_VERSION도 같이) -->
-  <link rel="stylesheet" href="css/style.css?v=0.3.2">
+  <link rel="stylesheet" href="css/style.css?v=0.3.3">
   <!-- 숫자 인식 엔진 Tesseract.js (버전 고정, config.js의 TESSERACT_* 경로와 같은 버전). 이미지는 브라우저 안에서만 처리 -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@7.0.0/dist/tesseract.min.js" integrity="sha384-2BQ3U3OdKOb0Uczxqr41I9UvZkzr4V9Hv8uSzMMZAlmhsFClvdZX5wi5fDCzG+tM" crossorigin="anonymous" async></script>
-  <script type="module" src="js/main.js?v=0.3.2"></script>
+  <script type="module" src="js/main.js?v=0.3.3"></script>
 </head>
 <body>
   <div class="page">
@@ -49,6 +49,12 @@
             <button id="zoomInBtn" type="button" class="icon-btn zoom-step" aria-label="확대">+</button>
             <output id="zoomValue" class="zoom-value">—</output>
             <button id="zoomResetBtn" type="button">초기화</button>
+          </div>
+          <!-- 노란 틀 크기 (영역 지정 모드에서만 표시, 영상 배율과 별개) -->
+          <div id="guideBar" class="zoom-bar" hidden>
+            <label for="guideInput" class="guide-label">틀 크기</label>
+            <input id="guideInput" type="range" value="40">
+            <output id="guideValue" class="zoom-value">40%</output>
           </div>
           <pre id="debugInfo" class="debug-info" hidden></pre>
           <div class="preview-box">

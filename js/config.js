@@ -1,6 +1,6 @@
 // ===== 앱 전체에서 쓰는 상수 =====
 
-export const APP_VERSION = 'v0.3.2';
+export const APP_VERSION = 'v0.3.3';
 
 // ===== 저장소 =====
 export const DB_NAME = 'kiln-recorder';
@@ -34,7 +34,10 @@ export const CAMERA_IDEAL_H = 1080;
 export const DEFAULT_DIGIT_ASPECT = 0.6;     // 자릿수 한 칸의 폭/높이 비율 (틀 비율 = 자릿수 × 이 값)
 export const MIN_DIGIT_ASPECT = 0.3;
 export const MAX_DIGIT_ASPECT = 1.2;
-export const GUIDE_WIDTH_RATIO = 0.7;        // 틀 폭 = 영상 영역 폭의 70%
+export const DEFAULT_GUIDE_WIDTH_RATIO = 0.4; // 틀 폭 = 영상 영역 폭 × 이 값 (가마별로 조절, 저장값이 없으면 기본)
+export const MIN_GUIDE_WIDTH_RATIO = 0.2;
+export const MAX_GUIDE_WIDTH_RATIO = 0.8;
+export const GUIDE_WIDTH_STEP = 0.05;
 export const GUIDE_MAX_HEIGHT_RATIO = 0.9;   // 틀 높이는 영상 영역 높이의 90%를 넘지 않게
 export const MIN_ZOOM = 1;                   // 디지털 확대 배율 범위
 export const MAX_ZOOM = 10;

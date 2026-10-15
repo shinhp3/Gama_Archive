@@ -7,12 +7,13 @@ import {
   READ_INTERVAL_OPTIONS, DEFAULT_READ_INTERVAL_SEC, DEFAULT_POLARITY,
   THRESHOLD_OFFSET_LIMIT, SHEAR_LIMIT, DEFAULT_SEG_ON_RATIO, MIN_SEG_ON_RATIO, MAX_SEG_ON_RATIO,
   DEFAULT_DIGIT_ASPECT, MIN_DIGIT_ASPECT, MAX_DIGIT_ASPECT, MIN_ZOOM, MAX_ZOOM,
+  DEFAULT_GUIDE_WIDTH_RATIO, MIN_GUIDE_WIDTH_RATIO, MAX_GUIDE_WIDTH_RATIO,
   RECOGNITION_MODES, DEFAULT_RECOGNITION_MODE, OCR_PREPROCESS_OPTIONS, DEFAULT_OCR_PREPROCESS
-} from './config.js?v=0.3.2';
+} from './config.js?v=0.3.3';
 import {
   getKilns, putKiln, deleteKiln, getPref, setPref, removePref,
   readLegacyKilns, clearLegacyKilns
-} from './db.js?v=0.3.2';
+} from './db.js?v=0.3.3';
 
 const SAVE_DELAY_MS = 400; // 슬라이더처럼 값이 연속으로 바뀔 때 모았다가 저장하는 시간
 
@@ -59,6 +60,8 @@ export function sanitizeKiln(raw) {
     view: copyView(raw.view),
     digits,
     digitAspect: numInRange(raw.digitAspect, MIN_DIGIT_ASPECT, MAX_DIGIT_ASPECT, DEFAULT_DIGIT_ASPECT),
+    // 노란 틀 폭 (영상 영역 폭 대비). 저장되지 않은 이전 가마는 기본값
+    guideWidthRatio: numInRange(raw.guideWidthRatio, MIN_GUIDE_WIDTH_RATIO, MAX_GUIDE_WIDTH_RATIO, DEFAULT_GUIDE_WIDTH_RATIO),
     polarity: raw.polarity === 'dark' ? 'dark' : DEFAULT_POLARITY,
     redLedMode: raw.redLedMode === true,
     thresholdOffset: Math.round(numInRange(raw.thresholdOffset, -THRESHOLD_OFFSET_LIMIT, THRESHOLD_OFFSET_LIMIT, 0)),

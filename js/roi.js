@@ -4,8 +4,9 @@
 
 import {
   ROI_COLOR, PREVIEW_MAX_W, PREVIEW_MAX_H, DEFAULT_DIGITS, DEFAULT_DIGIT_ASPECT,
-  GUIDE_WIDTH_RATIO, GUIDE_MAX_HEIGHT_RATIO, MIN_ZOOM, MAX_ZOOM, ZOOM_STEP
-} from './config.js?v=0.3.2';
+  DEFAULT_GUIDE_WIDTH_RATIO, MIN_GUIDE_WIDTH_RATIO, MAX_GUIDE_WIDTH_RATIO, GUIDE_WIDTH_STEP,
+  GUIDE_MAX_HEIGHT_RATIO, MIN_ZOOM, MAX_ZOOM, ZOOM_STEP
+} from './config.js?v=0.3.3';
 
 function clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
 function round3(v) { return Math.round(v * 1000) / 1000; }
@@ -47,10 +48,10 @@ export function fitBox(cw, ch, vw, vh) {
   return { x: (cw - w) / 2, y: (ch - h) / 2, w, h };
 }
 
-// 가이드 틀 크기: 비율 = 자릿수 × 자릿수 폭/높이 비율, 폭은 영상 영역 폭의 70%, 높이를 넘지 않게
-export function guideSize(cw, ch, digits, digitAspect) {
+// 가이드 틀 크기: 비율 = 자릿수 × 자릿수 폭/높이 비율, 폭은 영상 영역 폭 × widthRatio(가마별 설정), 높이를 넘지 않게
+export function guideSize(cw, ch, digits, digitAspect, widthRatio) {
   const ratio = digits * digitAspect;
-  let w = cw * GUIDE_WIDTH_RATIO;
+  let w = cw * clamp(widthRatio || DEFAULT_GUIDE_WIDTH_RATIO, MIN_GUIDE_WIDTH_RATIO, MAX_GUIDE_WIDTH_RATIO);
   let h = w / ratio;
   const maxH = ch * GUIDE_MAX_HEIGHT_RATIO;
   if (h > maxH) {
@@ -142,7 +143,8 @@ function zoomToSlider(z) {
 /**
  * @param {{ video: HTMLVideoElement, overlay: HTMLCanvasElement, previewCanvas: HTMLCanvasElement,
  *   previewPlaceholder: HTMLElement, zoomBar: HTMLElement, zoomInput: HTMLInputElement, zoomValue: HTMLElement,
- *   zoomInBtn: HTMLButtonElement, zoomOutBtn: HTMLButtonElement, zoomResetBtn: HTMLButtonElement }} els
+ *   zoomInBtn: HTMLButtonElement, zoomOutBtn: HTMLButtonElement, zoomResetBtn: HTMLButtonElement,
+ *   guideBar: HTMLElement, guideInput: HTMLInputElement, guideValue: HTMLElement }} els
  * @param {{ camera: object, getKiln: Function, onCommit: Function }} deps
  *   onCommit(patch, soon): 확대/이동이 바뀌어 { view, roi }를 가마 설정에 저장할 때 (soon이면 잠시 모았다가 저장)
  */
@@ -162,8 +164,14 @@ export function createRoiEditor(els, deps) {
   let lastVideoW = 0;        // 영상 해상도 변화 감지용 (회전 시 가로/세로가 바뀜)
   let lastVideoH = 0;
 
+  // 가마의 틀 폭 비율 (저장값이 없으면 기본)
+  function guideRatioOf(k) {
+    return k && k.guideWidthRatio ? k.guideWidthRatio : DEFAULT_GUIDE_WIDTH_RATIO;
+  }
+
   // 지금 화면 크기·영상 해상도·가마 설정으로 정해지는 배치 (카메라가 꺼져 있으면 null)
-  function layout() {
+  // widthRatio를 주면 가마에 저장된 틀 폭 대신 사용
+  function layout(widthRatio) {
     const cw = overlay.clientWidth;
     const ch = overlay.clientHeight;
     const size = camera.videoSize();
@@ -173,7 +181,8 @@ export function createRoiEditor(els, deps) {
       cw,
       ch,
       base: fitBox(cw, ch, size.width, size.height),
-      guide: guideSize(cw, ch, k ? k.digits : DEFAULT_DIGITS, k ? k.digitAspect : DEFAULT_DIGIT_ASPECT)
+      guide: guideSize(cw, ch, k ? k.digits : DEFAULT_DIGITS, k ? k.digitAspect : DEFAULT_DIGIT_ASPECT,
+        widthRatio || guideRatioOf(k))
     };
   }
 
@@ -188,13 +197,13 @@ export function createRoiEditor(els, deps) {
     return clampView(L.base, L.guide, v);
   }
 
-  // 확대/이동 상태와 틀이 가리키는 영역을 가마 설정에 저장
-  function commitView(L, view, soon) {
+  // 확대/이동 상태와 틀이 가리키는 영역을 가마 설정에 저장 (extra: 함께 저장할 항목)
+  function commitView(L, view, soon, extra) {
     if (!deps.getKiln()) return;
-    deps.onCommit({
+    deps.onCommit(Object.assign({
       view: { zoom: round3(view.zoom), cx: round5(view.cx), cy: round5(view.cy) },
       roi: viewToRoi(L.base, L.guide, view)
-    }, soon);
+    }, extra), soon);
   }
 
   function setVideoTransform(tx, ty, zoom) {
@@ -328,8 +337,8 @@ export function createRoiEditor(els, deps) {
 
   // ===== 확대/이동 =====
   // 화면 갱신 + 저장 (soon이면 잠시 모았다가 저장)
-  function setView(L, view, soon) {
-    commitView(L, view, soon);
+  function setView(L, view, soon, extra) {
+    commitView(L, view, soon, extra);
     scheduleDraw();
     updatePreview();
   }
@@ -367,7 +376,33 @@ export function createRoiEditor(els, deps) {
     setView(L, clampView(L.base, L.guide, { zoom: MIN_ZOOM, cx: 0.5, cy: 0.5 }), false);
   }
 
+  // 틀 크기 변경: 영상 배율과 틀 가운데의 프레임 위치는 그대로 두고 틀만 키우거나 줄여 영역을 다시 계산
+  // (틀이 영상 밖으로 나가게 되면 최소 배율·이동 범위에 맞춰 조정)
+  function setGuideWidth(ratio, soon) {
+    const k = deps.getKiln();
+    if (!k) return;
+    const r = clamp(Math.round(ratio / GUIDE_WIDTH_STEP) * GUIDE_WIDTH_STEP, MIN_GUIDE_WIDTH_RATIO, MAX_GUIDE_WIDTH_RATIO);
+    const next = Math.round(r * 100) / 100;
+    const L = layout();
+    if (!L) {
+      deps.onCommit({ guideWidthRatio: next }, soon);
+      scheduleDraw();
+      return;
+    }
+    const view = resolveView(L);
+    const L2 = layout(next);
+    setView(L2, clampView(L2.base, L2.guide, view), soon, { guideWidthRatio: next });
+  }
+
+  function updateGuideBar() {
+    const pct = Math.round(guideRatioOf(deps.getKiln()) * 100);
+    els.guideValue.textContent = pct + '%';
+    // 슬라이더를 움직이는 중에는 값이 같으므로 건드리지 않음
+    if (parseInt(els.guideInput.value, 10) !== pct) els.guideInput.value = String(pct);
+  }
+
   function updateZoomBar(s) {
+    updateGuideBar();
     if (!s) {
       els.zoomValue.textContent = '—';
       return;
@@ -466,6 +501,7 @@ export function createRoiEditor(els, deps) {
     cancelGesture();
     overlay.classList.toggle('readonly', !editable);
     els.zoomBar.hidden = !editable;
+    els.guideBar.hidden = !editable;
     if (editable) {
       // 조작을 시작하면 지금 틀이 가리키는 곳을 바로 영역으로 지정
       const L = layout();
@@ -553,6 +589,13 @@ export function createRoiEditor(els, deps) {
     els.zoomInBtn.addEventListener('click', () => zoomBy(ZOOM_STEP));
     els.zoomOutBtn.addEventListener('click', () => zoomBy(1 / ZOOM_STEP));
     els.zoomResetBtn.addEventListener('click', resetView);
+
+    els.guideInput.min = String(Math.round(MIN_GUIDE_WIDTH_RATIO * 100));
+    els.guideInput.max = String(Math.round(MAX_GUIDE_WIDTH_RATIO * 100));
+    els.guideInput.step = String(Math.round(GUIDE_WIDTH_STEP * 100));
+    els.guideInput.addEventListener('input', () => {
+      setGuideWidth((parseInt(els.guideInput.value, 10) || 0) / 100, true);
+    });
   }
 
   bindEvents();
