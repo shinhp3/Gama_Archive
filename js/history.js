@@ -14,7 +14,9 @@ export function createHistoryView(els) {
     try {
       listEl.innerHTML = '<p class="muted">로딩 중...</p>';
       
+      console.log('[History] 소성 목록 로드 시작...');
       const firings = await db.getAllFirings();
+      console.log('[History] 소성 개수:', firings ? firings.length : 0, firings);
       
       if (!firings || firings.length === 0) {
         listEl.innerHTML = '<p class="muted">아직 소성 기록이 없습니다.</p>';
@@ -26,7 +28,9 @@ export function createHistoryView(els) {
 
       // 목록 생성
       const items = await Promise.all(firings.map(async (f) => {
+        console.log('[History] 소성:', f.id, f.kilnName);
         const readings = await db.getReadings(f.id);
+        console.log('[History] 온도 기록 수:', readings.length);
         const temps = readings.map(r => r.temp).filter(t => t !== null);
         const maxTemp = temps.length > 0 ? Math.max(...temps) : null;
         

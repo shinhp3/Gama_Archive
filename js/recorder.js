@@ -46,17 +46,27 @@ export function createRecorder(deps) {
 
   // 판독 결과 추가 (검증된 온도만)
   function addReading(result) {
-    if (!currentFiring) return;
-    if (!result || !result.validation) return;
+    if (!currentFiring) {
+      console.log('[Recorder] 소성이 진행 중이 아닙니다');
+      return;
+    }
+    if (!result || !result.validation) {
+      console.log('[Recorder] validation 없음:', result);
+      return;
+    }
     
     const validatedTemp = result.validation.validatedTemp;
-    if (validatedTemp === null) return;
+    if (validatedTemp === null) {
+      console.log('[Recorder] validatedTemp가 null');
+      return;
+    }
     
     readings.push({
       temp: validatedTemp,
       confidence: typeof result.confidence === 'number' ? result.confidence : 0,
       at: Date.now()
     });
+    console.log('[Recorder] 판독 추가:', validatedTemp, '현재 개수:', readings.length);
   }
 
   // 중앙값 계산
@@ -87,6 +97,13 @@ export function createRecorder(deps) {
     const avgConf = readings.length === 0 ? null :
       readings.reduce((sum, r) => sum + r.confidence, 0) / readings.length;
     
+    console.log('[Recorder] 구간 저장:', {
+      interval: interval.index,
+      temp,
+      samples: temps.length,
+      quality
+    });
+    
     // 저장
     try {
       await db.saveReading({
@@ -101,13 +118,14 @@ export function createRecorder(deps) {
         editedAt: null
       });
       
+      console.log('[Recorder] 저장 완료');
       lastSaveTime = Date.now();
       
       // 다음 구간 준비
       readings = [];
       
     } catch (err) {
-      console.error('온도 기록 저장 실패:', err);
+      console.error('[Recorder] 온도 기록 저장 실패:', err);
       throw err;
     }
   }
@@ -155,6 +173,7 @@ export function createRecorder(deps) {
       endedAt: null
     };
     
+    console.log('[Recorder] 소성 시작:', firing);
     await db.saveFiring(firing);
     currentFiring = firing;
     readings = [];
@@ -173,6 +192,8 @@ export function createRecorder(deps) {
   async function end() {
     if (!currentFiring) return false;
     
+    console.log('[Recorder] 소성 종료 시작, 현재 판독 수:', readings.length);
+    
     // 1. 타이머 정지
     if (intervalTimer) {
       clearTimeout(intervalTimer);
@@ -181,10 +202,11 @@ export function createRecorder(deps) {
     
     // 2. 마지막 구간 저장 (1초 이상 경과했으면)
     if (readings.length > 0 && Date.now() - currentFiring.startedAt >= 1000) {
+      console.log('[Recorder] 마지막 구간 저장 시도...');
       try {
         await saveCurrentInterval();
       } catch (err) {
-        console.error('마지막 구간 저장 실패:', err);
+        console.error('[Recorder] 마지막 구간 저장 실패:', err);
         // 저장 실패해도 종료는 진행
       }
     }
@@ -192,9 +214,11 @@ export function createRecorder(deps) {
     // 3. 소성 종료 시각 저장
     const firingId = currentFiring.id;
     try {
+      console.log('[Recorder] 소성 종료 시각 저장:', firingId);
       await db.updateFiring(firingId, { endedAt: Date.now() });
+      console.log('[Recorder] 소성 종료 완료');
     } catch (err) {
-      console.error('소성 종료 시각 저장 실패:', err);
+      console.error('[Recorder] 소성 종료 시각 저장 실패:', err);
       throw err;
     }
     
