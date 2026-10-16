@@ -66,6 +66,9 @@ export function createTempChart(container, readings, startedAt) {
     scales: {
       x: {
         time: false
+      },
+      y: {
+        range: [0, 1400]
       }
     },
     cursor: {
@@ -177,7 +180,8 @@ export function createComparisonChart(container, firings) {
       }
     ],
     scales: {
-      x: {time: false}
+      x: {time: false},
+      y: {range: [0, 1400]}
     },
     cursor: {
       lock: true,
