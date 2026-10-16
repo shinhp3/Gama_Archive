@@ -7,7 +7,7 @@ import {
   DEFAULT_GUIDE_WIDTH_RATIO, MIN_GUIDE_WIDTH_RATIO, MAX_GUIDE_WIDTH_RATIO, GUIDE_WIDTH_STEP,
   MAX_ROTATION_DEG, ROTATION_STEP_DEG,
   GUIDE_MAX_HEIGHT_RATIO, MIN_ZOOM, MAX_ZOOM, ZOOM_STEP
-} from './config.js?v=0.3.6';
+} from './config.js?v=0.3.7';
 
 function clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
 function round3(v) { return Math.round(v * 1000) / 1000; }

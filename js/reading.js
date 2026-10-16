@@ -4,12 +4,12 @@
 
 import {
   READ_MAX_W, CONF_HIGH, CONF_LOW, FRAME_SETTLE_MS
-} from './config.js?v=0.3.6';
-import { createValidatorState, validateReading } from './temperature-validator.js?v=0.3.6';
-import { kilnSourceRegion, frameBlockReason } from './roi.js?v=0.3.6';
-import { recognize } from './recognizer.js?v=0.3.6';
-import { judgeOcr } from './ocr.js?v=0.3.6';
-import { variantOrder } from './ocrPreprocess.js?v=0.3.6';
+} from './config.js?v=0.3.7';
+import { createValidatorState, validateReading } from './temperature-validator.js?v=0.3.7';
+import { kilnSourceRegion, frameBlockReason } from './roi.js?v=0.3.7';
+import { recognize } from './recognizer.js?v=0.3.7';
+import { judgeOcr } from './ocr.js?v=0.3.7';
+import { variantOrder } from './ocrPreprocess.js?v=0.3.7';
 
 export const ENGINE_LABELS = { ocr: 'OCR', sevenSegment: '7세그먼트' };
 
