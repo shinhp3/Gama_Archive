@@ -212,6 +212,37 @@ export function getAllFirings() {
   });
 }
 
+// 소성 삭제 (readings도 함께)
+export async function deleteFiring(firingId) {
+  // 1. readings 삭제
+  await run('readings', 'readwrite', (store) => {
+    const index = store.index('firingId');
+    const req = index.getAllKeys(firingId);
+    return new Promise((resolve, reject) => {
+      req.onsuccess = () => {
+        const keys = req.result || [];
+        let pending = keys.length;
+        if (pending === 0) {
+          resolve();
+          return;
+        }
+        keys.forEach((key) => {
+          const delReq = store.delete(key);
+          delReq.onsuccess = () => {
+            pending--;
+            if (pending === 0) resolve();
+          };
+          delReq.onerror = () => reject(new Error('온도 기록 삭제 실패'));
+        });
+      };
+      req.onerror = () => reject(new Error('온도 기록 조회 실패'));
+    });
+  });
+  
+  // 2. firing 삭제
+  await run('firings', 'readwrite', (store) => store.delete(firingId));
+}
+
 // 온도 기록 저장
 export function saveReading(reading) {
   return run('readings', 'readwrite', (store) => store.add(reading)).then(() => reading);

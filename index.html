@@ -306,6 +306,50 @@
           <p class="muted">로딩 중...</p>
         </div>
       </section>
+      
+      <!-- 소성 상세 보기 -->
+      <section id="firingDetail" class="card" hidden>
+        <div class="detail-header">
+          <button id="backToListBtn" type="button" class="back-btn">← 목록으로</button>
+          <h2 id="detailKilnName"></h2>
+        </div>
+        
+        <div class="detail-info">
+          <div class="info-row">
+            <span class="info-label">시작:</span>
+            <span id="detailStartTime"></span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">종료:</span>
+            <span id="detailEndTime"></span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">소요:</span>
+            <span id="detailDuration"></span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">최고온도:</span>
+            <span id="detailMaxTemp"></span>
+          </div>
+          <div class="info-row">
+            <span class="info-label">기록 수:</span>
+            <span id="detailReadingCount"></span>
+          </div>
+        </div>
+        
+        <!-- 그래프 영역 -->
+        <div id="chartContainer" class="chart-container">
+          <div id="tempChart" class="temp-chart"></div>
+        </div>
+        
+        <!-- 온도 데이터 테이블 -->
+        <h3>온도 기록</h3>
+        <div id="readingsTable" class="readings-table"></div>
+        
+        <div class="detail-actions">
+          <button id="deleteFiringBtn" type="button" class="danger-btn">삭제</button>
+        </div>
+      </section>
     </section>
 
     <footer><span id="appVersion"></span></footer>
