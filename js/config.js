@@ -126,3 +126,7 @@ export const PATTERN_TO_DIGIT = Object.keys(DIGIT_PATTERNS).reduce((map, d) => {
   map[DIGIT_PATTERNS[d]] = d;
   return map;
 }, {});
+
+// ===== 소성 기록 (Phase 3) =====
+export const RECORD_INTERVAL_MS = 60000;      // 1분 (60초)
+export const MIN_VALID_SAMPLES = 6;           // 정상 품질 최소 판독 수 (1분에 12회 기대, 절반 이상)

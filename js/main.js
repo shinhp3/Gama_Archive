@@ -11,6 +11,7 @@ import { createOcrEngine } from './ocr.js?v=0.3.6';
 import { createOcrPreprocessor } from './ocrPreprocess.js?v=0.3.6';
 import { createCalibrationPanel } from './calibration.js?v=0.3.6';
 import { segmentQuads } from './recognizer.js?v=0.3.6';
+import { createRecorder } from './recorder.js?v=0.3.6';
 
 const TABS = ['record', 'history'];
 const ROI_RESET_MESSAGE = '화면 방향이 바뀌어 영역이 초기화되었습니다. 영역 버튼을 눌러 숫자를 노란 틀에 다시 맞춰 주세요.';
@@ -84,6 +85,15 @@ function getElements() {
     liveState: $('liveState'),
     liveValid: $('liveValid'),
     validResetBtn: $('validResetBtn'),
+    startFiringBtn: $('startFiringBtn'),
+    endFiringBtn: $('endFiringBtn'),
+    firingIdle: $('firingIdle'),
+    firingActive: $('firingActive'),
+    firingStartTime: $('firingStartTime'),
+    firingElapsed: $('firingElapsed'),
+    lastRecordTime: $('lastRecordTime'),
+    recordState: $('recordState'),
+    recordElapsed: $('recordElapsed'),
     calib: {
       panel: $('kilnSettings'),
       modeSelect: $('modeSelect'),
@@ -219,6 +229,82 @@ function startApp() {
     }
   });
 
+  // ===== 소성 기록 (Phase 3) =====
+  const recorder = createRecorder({
+    getKiln: () => kilns.current(),
+    camera,
+    onStateChange: updateFiringState
+  });
+
+  function updateFiringState(state) {
+    const isActive = state.active;
+    
+    // UI 전환
+    els.firingIdle.hidden = isActive;
+    els.firingActive.hidden = !isActive;
+    
+    // 상태 표시
+    els.recordState.textContent = isActive ? '기록 중' : '대기';
+    
+    if (isActive) {
+      // 시작 시각
+      const startTime = new Date(state.firing.startedAt);
+      els.firingStartTime.textContent = startTime.toLocaleString('ko-KR', {
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+      
+      // 경과 시간 (1초마다 갱신)
+      updateElapsed();
+      
+      // 마지막 기록 시각
+      if (state.lastSaveTime) {
+        const saveTime = new Date(state.lastSaveTime);
+        els.lastRecordTime.textContent = saveTime.toLocaleTimeString('ko-KR');
+      } else {
+        els.lastRecordTime.textContent = '아직 없음';
+      }
+      
+      // 버튼 상태
+      els.startFiringBtn.disabled = true;
+      updateRoiButton(); // ROI 버튼도 비활성화
+    } else {
+      els.recordElapsed.textContent = '—';
+      els.startFiringBtn.disabled = !canStartFiring();
+    }
+  }
+
+  function updateElapsed() {
+    const state = recorder.state();
+    if (!state.active) return;
+    
+    const elapsed = state.elapsed;
+    const hours = Math.floor(elapsed / 3600000);
+    const minutes = Math.floor((elapsed % 3600000) / 60000);
+    const seconds = Math.floor((elapsed % 60000) / 1000);
+    
+    const parts = [];
+    if (hours > 0) parts.push(hours + '시간');
+    if (minutes > 0) parts.push(minutes + '분');
+    parts.push(seconds + '초');
+    
+    els.recordElapsed.textContent = parts.join(' ');
+    els.firingElapsed.textContent = parts.join(' ');
+  }
+
+  function canStartFiring() {
+    const k = kilns.current();
+    return !!(k && k.roi && camera.isRunning() && !recorder.isActive());
+  }
+
+  function updateStartButton() {
+    if (!recorder.isActive()) {
+      els.startFiringBtn.disabled = !canStartFiring();
+    }
+  }
+
   const debugMode = isDebugMode();
   els.debugInfo.hidden = !debugMode;
   function updateDebug() {
@@ -268,6 +354,10 @@ function startApp() {
     const k = kilns.current();
     live.show(res);
     calib.show(res);
+    
+    // 소성 기록 중이면 recorder에 전달
+    recorder.addReading(res);
+    
     const showSamples = k && res.engine === 'sevenSegment' && res.binary && calib.isOpen();
     roi.setSamples(showSamples ? segmentQuads(res, k.shear) : null);
     if (debugMode && res.source) {
@@ -357,8 +447,9 @@ function startApp() {
   }
 
   // 카메라가 켜져 있고 가마가 있을 때만 영역 버튼 사용 가능
+  // 소성 중에는 영역 버튼 비활성화
   function updateRoiButton() {
-    const usable = camera.isRunning() && !!kilns.current();
+    const usable = camera.isRunning() && !!kilns.current() && !recorder.isActive();
     els.roiEditBtn.disabled = !usable;
     if (!usable) setRoiEditing(false);
   }
@@ -377,6 +468,7 @@ function startApp() {
   // ===== 가마 =====
   function handleKilnChange(switched) {
     updateRoiButton();
+    updateStartButton(); // 소성 시작 버튼 상태 갱신
     calib.render();
     if (switched) {
       roi.cancelGesture();
@@ -397,6 +489,7 @@ function startApp() {
   // ===== 카메라 =====
   function handleCameraStarted() {
     updateRoiButton();
+    updateStartButton(); // 소성 시작 버튼 상태 갱신
     const k = kilns.current();
     if (!k) {
       showMessage('"추가"를 눌러 가마를 먼저 등록하세요.', 'info');
@@ -414,6 +507,7 @@ function startApp() {
     reader.invalidate(); // 진행 중인 OCR 결과는 버리고 새 판독은 시작하지 않음 (카메라 꺼짐)
     roi.cancelGesture();
     updateRoiButton();
+    updateStartButton(); // 소성 시작 버튼 상태 갱신
     refreshCameraView();
   }
 
@@ -440,6 +534,31 @@ function startApp() {
 
     // 영역 지정(영상 확대/이동) 모드 켜기/끄기
     els.roiEditBtn.addEventListener('click', () => setRoiEditing(!roi.isEditable()));
+    
+    // 소성 시작/종료 (Phase 3)
+    els.startFiringBtn.addEventListener('click', async () => {
+      try {
+        els.startFiringBtn.disabled = true;
+        await recorder.start();
+        showMessage('소성 기록을 시작했습니다.', 'ok', 3000);
+      } catch (err) {
+        showMessage(err.message || '소성을 시작하지 못했습니다.', 'error');
+        els.startFiringBtn.disabled = false;
+      }
+    });
+    
+    els.endFiringBtn.addEventListener('click', () => {
+      if (!confirm('소성을 종료하시겠습니까?\n기록된 데이터는 "기록 보기"에서 확인할 수 있습니다.')) return;
+      
+      recorder.end()
+        .then(() => {
+          showMessage('소성 기록을 종료했습니다. 정기적으로 데이터를 백업하세요.', 'ok', 5000);
+        })
+        .catch((err) => {
+          showMessage(err.message || '소성 종료에 실패했습니다.', 'error');
+        });
+    });
+    
     // 급변 경고가 계속될 때: 사용자가 표시창을 직접 확인한 뒤 기준 온도를 처음부터 다시 확립
     els.validResetBtn.addEventListener('click', () => {
       reader.resetValidation();
@@ -501,9 +620,12 @@ function startApp() {
 
   initDb()
     .then(() => kilns.load())
+    .then(() => recorder.resume()) // 활성 소성 복구 시도
     .then(() => {
       calib.render();
       updateActivity();
+      updateStartButton();
+      updateFiringState(recorder.state());
       refreshCameraView();
       if (!kilns.hasKilns()) {
         showMessage('"추가"를 눌러 가마를 등록하세요.', 'info');
@@ -513,11 +635,14 @@ function startApp() {
       showMessage(err && err.message ? err.message : '저장소를 열지 못했습니다.', 'error');
     });
 
-  // 1초마다 영역 확대 미리보기 갱신. 회전 이벤트가 오지 않는 경우에 대비해 방향도 함께 확인
+  // 1초마다 영역 확대 미리보기 갱신 및 소성 경과 시간 갱신
   setInterval(() => {
     checkOrientation();
     roi.updatePreview();
     updateDebug();
+    if (recorder.isActive()) {
+      updateElapsed();
+    }
   }, PREVIEW_INTERVAL_MS);
 
   // 판독 확인 (7세그먼트는 매번 판독, OCR은 이전 작업이 끝났고 판독 주기가 지났을 때만)

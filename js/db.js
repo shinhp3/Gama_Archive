@@ -162,3 +162,61 @@ export function clearLegacyKilns() {
     window.localStorage.removeItem(LEGACY_KEY_LAST);
   } catch (e) { /* 무시 */ }
 }
+
+// ===== 소성 기록 (Phase 3) =====
+
+// 소성 저장
+export function saveFiring(firing) {
+  return run('firings', 'readwrite', (store) => store.add(firing)).then(() => firing);
+}
+
+// 소성 업데이트 (종료 시각 등)
+export function updateFiring(id, updates) {
+  return run('firings', 'readwrite', (store) => {
+    const req = store.get(id);
+    return new Promise((resolve, reject) => {
+      req.onsuccess = () => {
+        const firing = req.result;
+        if (!firing) {
+          reject(new Error('소성을 찾을 수 없습니다.'));
+          return;
+        }
+        const updated = Object.assign({}, firing, updates);
+        const putReq = store.put(updated);
+        putReq.onsuccess = () => resolve(updated);
+        putReq.onerror = () => reject(new Error('소성 업데이트에 실패했습니다.'));
+      };
+      req.onerror = () => reject(new Error('소성을 찾을 수 없습니다.'));
+    });
+  });
+}
+
+// 활성 소성 조회 (endedAt = null)
+export function getActiveFiring() {
+  return run('firings', 'readonly', (store) => store.getAll()).then((list) => {
+    if (!list || !list.length) return null;
+    // endedAt이 없는(null) 소성 찾기
+    return list.find((f) => !f.endedAt) || null;
+  });
+}
+
+// 소성 ID로 조회
+export function getFiring(id) {
+  return run('firings', 'readonly', (store) => store.get(id));
+}
+
+// 온도 기록 저장
+export function saveReading(reading) {
+  return run('readings', 'readwrite', (store) => store.add(reading)).then(() => reading);
+}
+
+// 소성의 온도 기록 조회 (시각순 정렬)
+export function getReadings(firingId) {
+  return run('readings', 'readonly', (store) => {
+    const index = store.index('firingId');
+    return index.getAll(firingId);
+  }).then((list) => {
+    (list || []).sort((a, b) => a.ts - b.ts);
+    return list || [];
+  });
+}

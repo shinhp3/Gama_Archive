@@ -106,6 +106,37 @@
               <span id="recordElapsed" class="elapsed">—</span>
             </div>
           </div>
+          
+          <!-- 소성 기록 (Phase 3) -->
+          <div class="firing-section">
+            <!-- 소성 대기 -->
+            <div id="firingIdle">
+              <button id="startFiringBtn" type="button" class="primary" disabled>
+                소성 시작
+              </button>
+            </div>
+            
+            <!-- 소성 진행 중 -->
+            <div id="firingActive" hidden>
+              <div class="firing-info">
+                <div class="status-row">
+                  <span class="status-label">시작 시각</span>
+                  <span id="firingStartTime">—</span>
+                </div>
+                <div class="status-row">
+                  <span class="status-label">소성 경과</span>
+                  <span id="firingElapsed">—</span>
+                </div>
+                <div class="status-row">
+                  <span class="status-label">마지막 기록</span>
+                  <span id="lastRecordTime">—</span>
+                </div>
+              </div>
+              <button id="endFiringBtn" type="button" class="danger">
+                소성 종료
+              </button>
+            </div>
+          </div>
         </section>
 
         <!-- 현재 인식값 -->

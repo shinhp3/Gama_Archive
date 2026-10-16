@@ -1,0 +1,237 @@
+// ===== 소성 자동 기록 =====
+// 5초 판독 결과를 모아 1분마다 중앙값을 계산해 저장
+
+import { RECORD_INTERVAL_MS, MIN_VALID_SAMPLES } from './config.js?v=0.3.6';
+import * as db from './db.js?v=0.3.6';
+
+function makeId() {
+  if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
+  return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+}
+
+/**
+ * @param {{ getKiln: Function, camera: object, onStateChange: Function }} deps
+ *   getKiln(): 현재 선택된 가마, camera: 카메라 모듈, onStateChange(state): 소성 상태 변경
+ */
+export function createRecorder(deps) {
+  const { getKiln, camera } = deps;
+  
+  let currentFiring = null;    // 진행 중인 소성
+  let intervalTimer = null;    // 1분 타이머
+  let readings = [];           // 현재 1분 구간의 판독 결과들
+  let lastSaveTime = null;     // 마지막 저장 시각
+
+  // 현재 소성 상태
+  function state() {
+    if (!currentFiring) return { active: false };
+    return {
+      active: true,
+      firing: currentFiring,
+      elapsed: Date.now() - currentFiring.startedAt,
+      lastSaveTime,
+      readingCount: readings.length
+    };
+  }
+
+  // 현재 1분 구간 (소성 시작 시각 기준)
+  function getCurrentInterval(startedAt) {
+    const elapsed = Date.now() - startedAt;
+    const minutes = Math.floor(elapsed / RECORD_INTERVAL_MS);
+    return {
+      index: minutes,  // 0분, 1분, 2분...
+      start: startedAt + minutes * RECORD_INTERVAL_MS,
+      end: startedAt + (minutes + 1) * RECORD_INTERVAL_MS
+    };
+  }
+
+  // 판독 결과 추가 (검증된 온도만)
+  function addReading(result) {
+    if (!currentFiring) return;
+    if (!result || !result.validation) return;
+    
+    const validatedTemp = result.validation.validatedTemp;
+    if (validatedTemp === null) return;
+    
+    readings.push({
+      temp: validatedTemp,
+      confidence: typeof result.confidence === 'number' ? result.confidence : 0,
+      at: Date.now()
+    });
+  }
+
+  // 중앙값 계산
+  function calculateMedian(temps) {
+    if (!temps.length) return null;
+    const sorted = temps.slice().sort((a, b) => a - b);
+    const mid = sorted.length >> 1;
+    return sorted.length % 2 === 1
+      ? sorted[mid]
+      : (sorted[mid - 1] + sorted[mid]) / 2;
+  }
+
+  // 현재 구간 저장
+  async function saveCurrentInterval() {
+    if (!currentFiring) return;
+
+    const interval = getCurrentInterval(currentFiring.startedAt);
+    
+    // 온도 중앙값
+    const temps = readings.map((r) => r.temp);
+    const temp = calculateMedian(temps);
+    
+    // 데이터 품질
+    const quality = temps.length === 0 ? 'missing' :
+      temps.length < MIN_VALID_SAMPLES ? 'insufficient' : 'normal';
+    
+    // 평균 신뢰도
+    const avgConf = readings.length === 0 ? null :
+      readings.reduce((sum, r) => sum + r.confidence, 0) / readings.length;
+    
+    // 저장
+    try {
+      await db.saveReading({
+        firingId: currentFiring.id,
+        ts: interval.end,
+        temp,
+        confidence: avgConf,
+        validSampleCount: temps.length,
+        quality,
+        edited: false,
+        originalTemp: null,
+        editedAt: null
+      });
+      
+      lastSaveTime = Date.now();
+      
+      // 다음 구간 준비
+      readings = [];
+      
+    } catch (err) {
+      console.error('온도 기록 저장 실패:', err);
+      throw err;
+    }
+  }
+
+  // 1분 타이머 시작
+  function startIntervalTimer() {
+    if (!currentFiring) return;
+    
+    const interval = getCurrentInterval(currentFiring.startedAt);
+    const delay = interval.end - Date.now();
+    
+    // 이미 구간이 지났으면 즉시 저장
+    if (delay <= 0) {
+      saveCurrentInterval()
+        .then(() => startIntervalTimer())
+        .catch((err) => console.error('구간 저장 실패:', err));
+      return;
+    }
+    
+    intervalTimer = setTimeout(() => {
+      saveCurrentInterval()
+        .then(() => startIntervalTimer())
+        .catch((err) => console.error('구간 저장 실패:', err));
+    }, delay);
+  }
+
+  // 소성 시작
+  async function start() {
+    // 1. 검증
+    const kiln = getKiln();
+    if (!kiln) throw new Error('가마를 선택하세요.');
+    if (!kiln.roi) throw new Error('영역을 먼저 지정하세요.');
+    if (!camera.isRunning()) throw new Error('카메라를 먼저 시작하세요.');
+    
+    // 2. 활성 소성 확인
+    const active = await db.getActiveFiring();
+    if (active) throw new Error('이미 진행 중인 소성이 있습니다.');
+    
+    // 3. 소성 기록 생성
+    const firing = {
+      id: makeId(),
+      kilnId: kiln.id,
+      kilnName: kiln.name,
+      startedAt: Date.now(),
+      endedAt: null
+    };
+    
+    await db.saveFiring(firing);
+    currentFiring = firing;
+    readings = [];
+    lastSaveTime = null;
+    
+    // 4. 1분 타이머 시작
+    startIntervalTimer();
+    
+    // 5. 상태 변경 알림
+    if (deps.onStateChange) deps.onStateChange(state());
+    
+    return firing;
+  }
+
+  // 소성 종료
+  async function end() {
+    if (!currentFiring) return false;
+    
+    // 1. 타이머 정지
+    if (intervalTimer) {
+      clearTimeout(intervalTimer);
+      intervalTimer = null;
+    }
+    
+    // 2. 마지막 구간 저장 (1초 이상 경과했으면)
+    if (readings.length > 0 && Date.now() - currentFiring.startedAt >= 1000) {
+      try {
+        await saveCurrentInterval();
+      } catch (err) {
+        console.error('마지막 구간 저장 실패:', err);
+        // 저장 실패해도 종료는 진행
+      }
+    }
+    
+    // 3. 소성 종료 시각 저장
+    const firingId = currentFiring.id;
+    try {
+      await db.updateFiring(firingId, { endedAt: Date.now() });
+    } catch (err) {
+      console.error('소성 종료 시각 저장 실패:', err);
+      throw err;
+    }
+    
+    // 4. 상태 초기화
+    currentFiring = null;
+    readings = [];
+    lastSaveTime = null;
+    
+    // 5. 상태 변경 알림
+    if (deps.onStateChange) deps.onStateChange(state());
+    
+    return true;
+  }
+
+  // 활성 소성 복구 (페이지 새로고침 시)
+  async function resume() {
+    const active = await db.getActiveFiring();
+    if (!active) return null;
+    
+    currentFiring = active;
+    readings = [];
+    lastSaveTime = null;
+    
+    // 타이머 재시작
+    startIntervalTimer();
+    
+    if (deps.onStateChange) deps.onStateChange(state());
+    
+    return active;
+  }
+
+  return {
+    start,
+    end,
+    resume,
+    addReading,
+    state,
+    isActive: () => !!currentFiring
+  };
+}
