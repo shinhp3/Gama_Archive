@@ -24,12 +24,16 @@ export function createRecorder(deps) {
   // 현재 소성 상태
   function state() {
     if (!currentFiring) return { active: false };
+    
+    const lastReading = readings.length > 0 ? readings[readings.length - 1] : null;
+    
     return {
       active: true,
       firing: currentFiring,
       elapsed: Date.now() - currentFiring.startedAt,
       lastSaveTime,
-      readingCount: readings.length
+      readingCount: readings.length,
+      lastReadingTemp: lastReading ? lastReading.temp : null
     };
   }
 
@@ -57,7 +61,7 @@ export function createRecorder(deps) {
     
     const validatedTemp = result.validation.validatedTemp;
     if (validatedTemp === null) {
-      console.log('[Recorder] validatedTemp가 null');
+      console.log('[Recorder] validatedTemp가 null, status:', result.validation.status, 'rawTemp:', result.temp);
       return;
     }
     
@@ -67,6 +71,9 @@ export function createRecorder(deps) {
       at: Date.now()
     });
     console.log('[Recorder] 판독 추가:', validatedTemp, '현재 개수:', readings.length);
+    
+    // UI 업데이트
+    if (deps.onStateChange) deps.onStateChange(state());
   }
 
   // 중앙값 계산

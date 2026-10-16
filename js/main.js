@@ -94,6 +94,8 @@ function getElements() {
     firingStartTime: $('firingStartTime'),
     firingElapsed: $('firingElapsed'),
     lastRecordTime: $('lastRecordTime'),
+    readingCount: $('readingCount'),
+    lastReading: $('lastReading'),
     recordState: $('recordState'),
     recordElapsed: $('recordElapsed'),
     calib: {
@@ -267,6 +269,14 @@ function startApp() {
         els.lastRecordTime.textContent = saveTime.toLocaleTimeString('ko-KR');
       } else {
         els.lastRecordTime.textContent = '아직 없음';
+      }
+      
+      // 측정 횟수와 마지막 측정
+      els.readingCount.textContent = state.readingCount || 0;
+      if (state.lastReadingTemp !== undefined && state.lastReadingTemp !== null) {
+        els.lastReading.textContent = state.lastReadingTemp + '°C';
+      } else {
+        els.lastReading.textContent = '—';
       }
       
       // 버튼 상태
