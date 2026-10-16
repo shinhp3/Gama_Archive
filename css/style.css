@@ -542,6 +542,60 @@ select { -webkit-appearance: none; appearance: none; padding-right: clamp(36px, 
   width: 100%;
 }
 
+/* ===== 기록 보기 (Phase 3 간단 버전) ===== */
+.firing-list {
+  display: flex;
+  flex-direction: column;
+  gap: clamp(12px, 2vw, 16px);
+}
+
+.firing-item {
+  padding: clamp(12px, 2vw, 16px);
+  border: 1px solid var(--border);
+  border-radius: clamp(8px, 1.5vw, 12px);
+  background: var(--input-bg);
+}
+
+.firing-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  gap: 12px;
+}
+
+.firing-header h3 {
+  margin: 0;
+  font-size: clamp(1.1rem, 2.5vw, 1.25rem);
+}
+
+.status-complete {
+  background: var(--ok-bg);
+  color: var(--ok-text);
+}
+
+.status-active {
+  background: var(--primary);
+  color: var(--primary-text);
+}
+
+.firing-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.meta-row {
+  display: flex;
+  gap: 8px;
+  font-size: clamp(14px, 2.2vw, 15px);
+}
+
+.meta-label {
+  color: var(--muted);
+  min-width: 80px;
+}
+
 /* 접었다 펴는 카드 (가마 설정, 사용 안내) */
 .fold summary {
   display: flex;

@@ -205,6 +205,13 @@ export function getFiring(id) {
   return run('firings', 'readonly', (store) => store.get(id));
 }
 
+// 모든 소성 조회
+export function getAllFirings() {
+  return run('firings', 'readonly', (store) => store.getAll()).then((list) => {
+    return list || [];
+  });
+}
+
 // 온도 기록 저장
 export function saveReading(reading) {
   return run('readings', 'readwrite', (store) => store.add(reading)).then(() => reading);

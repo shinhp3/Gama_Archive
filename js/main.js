@@ -12,6 +12,7 @@ import { createOcrPreprocessor } from './ocrPreprocess.js?v=0.3.6';
 import { createCalibrationPanel } from './calibration.js?v=0.3.6';
 import { segmentQuads } from './recognizer.js?v=0.3.6';
 import { createRecorder } from './recorder.js?v=0.3.6';
+import { createHistoryView } from './history.js?v=0.3.6';
 
 const TABS = ['record', 'history'];
 const ROI_RESET_MESSAGE = '화면 방향이 바뀌어 영역이 초기화되었습니다. 영역 버튼을 눌러 숫자를 노란 틀에 다시 맞춰 주세요.';
@@ -39,6 +40,7 @@ function getElements() {
     message: $('message'),
     views: { record: $('viewRecord'), history: $('viewHistory') },
     tabButtons: Array.prototype.slice.call(document.querySelectorAll('.tabbar .tab')),
+    firingList: $('firingList'),
     roiEditBtn: $('roiEditBtn'),
     cameraBtn: $('cameraBtn'),
     videoWrap: $('videoWrap'),
@@ -416,6 +418,9 @@ function startApp() {
     refreshCameraView();
   }
 
+  // ===== 기록 보기 =====
+  const history = createHistoryView({ listEl: els.firingList });
+
   // ===== 탭 전환 =====
   function showTab(tab) {
     if (TABS.indexOf(tab) < 0) return;
@@ -428,6 +433,12 @@ function startApp() {
       }
     });
     if (tab !== 'record') setRoiEditing(false);
+    
+    // 기록 보기 탭이면 목록 새로고침
+    if (tab === 'history') {
+      history.loadList();
+    }
+    
     refreshCameraView();
     window.scrollTo(0, 0);
   }
