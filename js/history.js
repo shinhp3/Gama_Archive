@@ -1,6 +1,7 @@
 // ===== 기록 보기 (Phase 5) =====
 
 import * as db from './db.js?v=0.3.6';
+import { createTempChart } from './chart.js?v=0.3.6';
 
 /**
  * @param {{ listEl: HTMLElement, detailSection: HTMLElement, ...detailElements }} els
@@ -22,6 +23,7 @@ export function createHistoryView(els) {
   } = els;
 
   let currentFiring = null;
+  let currentChart = null;
 
   // 소성 목록 표시
   async function loadList() {
@@ -129,8 +131,18 @@ export function createHistoryView(els) {
       detailMaxTemp.textContent = maxTemp !== null ? maxTemp + '°C' : '—';
       detailReadingCount.textContent = readings.length + '개';
       
-      // 그래프 (나중에 uPlot으로 구현)
-      chartContainer.innerHTML = '<p class="muted">그래프는 곧 추가됩니다.</p>';
+      // 그래프
+      if (currentChart) {
+        currentChart.cleanup();
+        currentChart = null;
+      }
+      
+      chartContainer.innerHTML = '';
+      if (readings.length === 0) {
+        chartContainer.innerHTML = '<p class="muted">온도 기록이 없습니다.</p>';
+      } else {
+        currentChart = createTempChart(chartContainer, readings, firing.startedAt);
+      }
       
       // 테이블
       if (readings.length === 0) {
@@ -187,6 +199,10 @@ export function createHistoryView(els) {
 
   // 목록으로 돌아가기
   function backToList() {
+    if (currentChart) {
+      currentChart.cleanup();
+      currentChart = null;
+    }
     currentFiring = null;
     detailSection.hidden = true;
     listEl.parentElement.hidden = false;

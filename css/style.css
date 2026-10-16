@@ -646,17 +646,26 @@ select { -webkit-appearance: none; appearance: none; padding-right: clamp(36px, 
   font-weight: 500;
 }
 
+/* 그래프 */
 .chart-container {
   margin: 20px 0;
-  padding: 20px;
   background: var(--input-bg);
   border-radius: 8px;
-  min-height: 200px;
+  overflow: hidden;
 }
 
 .temp-chart {
   width: 100%;
-  height: 300px;
+  min-height: 300px;
+}
+
+/* uPlot 테마 조정 */
+.u-legend {
+  font-size: 13px !important;
+}
+
+.u-series {
+  font-family: inherit !important;
 }
 
 .readings-table {
