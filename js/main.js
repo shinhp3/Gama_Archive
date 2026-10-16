@@ -41,6 +41,7 @@ function getElements() {
     views: { record: $('viewRecord'), history: $('viewHistory') },
     tabButtons: Array.prototype.slice.call(document.querySelectorAll('.tabbar .tab')),
     firingList: $('firingList'),
+    firingListCard: $('firingList').parentElement,
     firingDetail: $('firingDetail'),
     backToListBtn: $('backToListBtn'),
     detailKilnName: $('detailKilnName'),
@@ -440,7 +441,21 @@ function startApp() {
   }
 
   // ===== 기록 보기 =====
-  const history = createHistoryView({ listEl: els.firingList });
+  const history = createHistoryView({ 
+    listEl: els.firingList,
+    listCard: els.firingListCard,
+    detailSection: els.firingDetail,
+    backToListBtn: els.backToListBtn,
+    detailKilnName: els.detailKilnName,
+    detailStartTime: els.detailStartTime,
+    detailEndTime: els.detailEndTime,
+    detailDuration: els.detailDuration,
+    detailMaxTemp: els.detailMaxTemp,
+    detailReadingCount: els.detailReadingCount,
+    chartContainer: els.chartContainer,
+    readingsTable: els.readingsTable,
+    deleteFiringBtn: els.deleteFiringBtn
+  });
 
   // ===== 탭 전환 =====
   function showTab(tab) {

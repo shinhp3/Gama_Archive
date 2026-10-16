@@ -4,11 +4,12 @@ import * as db from './db.js?v=0.3.6';
 import { createTempChart } from './chart.js?v=0.3.6';
 
 /**
- * @param {{ listEl: HTMLElement, detailSection: HTMLElement, ...detailElements }} els
+ * @param {{ listEl: HTMLElement, listCard: HTMLElement, detailSection: HTMLElement, ...detailElements }} els
  */
 export function createHistoryView(els) {
   const { 
-    listEl, 
+    listEl,
+    listCard,
     detailSection,
     backToListBtn,
     detailKilnName,
@@ -88,12 +89,23 @@ export function createHistoryView(els) {
 
       listEl.innerHTML = items.join('');
       
+      console.log('[History] 목록 렌더링 완료, 클릭 이벤트 등록 시작');
+      
       // 클릭 이벤트
-      listEl.querySelectorAll('.firing-item').forEach(item => {
+      const itemElements = listEl.querySelectorAll('.firing-item');
+      console.log('[History] 찾은 아이템 수:', itemElements.length);
+      
+      itemElements.forEach((item, index) => {
+        const firingId = item.dataset.firingId;
+        console.log('[History] 아이템', index, '- firingId:', firingId);
+        
         item.addEventListener('click', () => {
-          const firingId = item.dataset.firingId;
+          console.log('[History] 클릭됨! firingId:', firingId);
           showDetail(firingId);
         });
+        
+        // 커서 포인터 스타일 확인
+        item.style.cursor = 'pointer';
       });
       
     } catch (err) {
@@ -104,8 +116,12 @@ export function createHistoryView(els) {
 
   // 소성 상세 보기
   async function showDetail(firingId) {
+    console.log('[History] showDetail 호출됨, firingId:', firingId);
+    
     try {
       const firing = await db.getFiring(firingId);
+      console.log('[History] firing 데이터:', firing);
+      
       if (!firing) {
         alert('소성 기록을 찾을 수 없습니다.');
         return;
@@ -188,12 +204,18 @@ export function createHistoryView(els) {
       }
       
       // 화면 전환
-      listEl.parentElement.hidden = true;
+      console.log('[History] 화면 전환 시작');
+      console.log('[History] listCard:', listCard);
+      console.log('[History] detailSection:', detailSection);
+      
+      listCard.hidden = true;
       detailSection.hidden = false;
       
+      console.log('[History] 화면 전환 완료');
+      
     } catch (err) {
-      console.error('상세 보기 로드 실패:', err);
-      alert('상세 정보를 불러오지 못했습니다.');
+      console.error('[History] 상세 보기 로드 실패:', err);
+      alert('상세 정보를 불러오지 못했습니다: ' + err.message);
     }
   }
 
@@ -205,7 +227,7 @@ export function createHistoryView(els) {
     }
     currentFiring = null;
     detailSection.hidden = true;
-    listEl.parentElement.hidden = false;
+    listCard.hidden = false;
     loadList();
   }
 
