@@ -3,13 +3,13 @@
 // OCR은 오래 걸리므로 한 번에 하나만 실행하고, 가마·설정이 바뀌거나 카메라가 꺼진 뒤 늦게 끝난 결과는 버림
 
 import {
-  READ_MAX_W, CONF_HIGH, CONF_LOW, FRAME_SETTLE_MS
-} from './config.js?v=0.3.7';
-import { createValidatorState, validateReading } from './temperature-validator.js?v=0.3.7';
-import { kilnSourceRegion, frameBlockReason } from './roi.js?v=0.3.7';
-import { recognize } from './recognizer.js?v=0.3.7';
-import { judgeOcr } from './ocr.js?v=0.3.7';
-import { variantOrder } from './ocrPreprocess.js?v=0.3.7';
+  READ_MAX_W, CONF_HIGH, CONF_LOW, FRAME_SETTLE_MS, OCR_STABLE_READS
+} from './config.js?v=0.3.9';
+import { createValidatorState, validateReading } from './temperature-validator.js?v=0.3.9';
+import { kilnSourceRegion, frameBlockReason } from './roi.js?v=0.3.9';
+import { recognize } from './recognizer.js?v=0.3.9';
+import { judgeOcr, formatTemp } from './ocr.js?v=0.3.9';
+import { variantOrder, advanceVariantLock, VARIANT_LABELS } from './ocrPreprocess.js?v=0.3.9';
 
 export const ENGINE_LABELS = { ocr: 'OCR', sevenSegment: '7세그먼트' };
 
@@ -67,8 +67,9 @@ export function activityText(a) {
 /**
  * 판독 조정기
  * @param {{ camera: object, ocr: object, preprocessor: object, getKiln: Function,
- *   onResult: Function, onActivity: Function }} deps
+ *   onResult: Function, onActivity: Function, onLockVariant: Function }} deps
  *   onResult(result): 새 판독 결과(또는 판독할 수 없는 상태), onActivity(): 인식 중 여부·엔진 상태가 바뀜
+ *   onLockVariant(variant|null): 자동으로 고른 전처리를 가마 설정에 저장 (null이면 다시 탐색)
  */
 export function createReader(deps) {
   const { camera, ocr } = deps;
@@ -78,6 +79,7 @@ export function createReader(deps) {
   let settleKey = '';        // 영상 크기가 확정됐는지 확인용
   let settleAt = 0;
   const validators = new Map(); // 가마 id → 시간 변화 검증 상태
+  const searches = new Map();   // 가마 id → 전처리 탐색 상태 { pending, failStreak }
 
   function now() {
     return (window.performance && performance.now) ? performance.now() : Date.now();
@@ -136,7 +138,31 @@ export function createReader(deps) {
     return validate(r, k.id, at);
   }
 
-  // OCR 한 번: 기본 전처리로 먼저 읽고, 실패했을 때만 다른 전처리를 차례로 시험
+  function searchState(id) {
+    let s = searches.get(id);
+    if (!s) {
+      s = { pending: {}, failStreak: 0 };
+      searches.set(id, s);
+    }
+    return s;
+  }
+
+  function rememberLock(variant) {
+    if (deps.onLockVariant) deps.onLockVariant(variant || null);
+  }
+
+  // 탐색 중에는 온도를 확정하지 않음. 진단용 후보는 남겨 둠
+  function holdForSearch(result, reason, preprocessState) {
+    result.ok = false;
+    result.temp = null;
+    result.value = null;
+    result.status = 'fail';
+    result.reason = reason;
+    result.preprocessState = preprocessState;
+    return result;
+  }
+
+  // OCR 한 번. 자동이면 후보 전처리를 비교해 같은 숫자가 이어질 때만 그 방식을 유지
   async function runOcr(k) {
     busy = true;
     lastStartAt = Date.now();
@@ -145,26 +171,75 @@ export function createReader(deps) {
     deps.onActivity();
     const t0 = now();
     const attempts = [];
+    let judged = [];
     let result = null;
     let source = null;
+    const manual = !!(k.ocrPreprocess && k.ocrPreprocess !== 'auto');
+    const lockedVariant = manual ? null : (k.ocrLockedVariant || null);
+    let lockToSave;
     try {
       const frame = deps.preprocessor.prepare(k);
       if (!frame) {
         result = statusResult('ocr', 'fail', '영상을 읽지 못했습니다.');
       } else {
         source = frame.source;
-        const order = variantOrder(k);
+        const order = variantOrder(k, lockedVariant);
         for (let i = 0; i < order.length; i++) {
           const built = deps.preprocessor.build(frame, order[i], k);
           const out = await ocr.recognize(built.canvas);
           if (gen !== generation) break;
-          result = judgeOcr(out.rawText, out.confidence, k.digits);
-          result.variant = order[i];
-          result.image = built.canvas;
-          result.otsu = built.otsu;
-          result.threshold = built.threshold;
-          attempts.push({ variant: order[i], rawText: out.rawText, confidence: out.confidence, ok: result.ok, reason: result.reason });
-          if (result.ok) break;
+          const one = judgeOcr(out.rawText, out.confidence, out.words);
+          one.variant = order[i];
+          one.image = built.canvas;
+          one.otsu = built.otsu;
+          one.threshold = built.threshold;
+          judged.push(one);
+          attempts.push({
+            variant: order[i],
+            rawText: out.rawText,
+            confidence: out.confidence,
+            ok: one.ok,
+            reason: one.reason,
+            multiple: !!one.multiple,
+            text: one.text
+          });
+        }
+        if (gen === generation && judged.length) {
+          result = judged[judged.length - 1];
+          if (manual) {
+            const hit = judged.filter((j) => j.ok)[0];
+            result = hit || result;
+            result.preprocessState = 'manual';
+          } else {
+            const decision = advanceVariantLock(searchState(kilnId), attempts, lockedVariant);
+            searches.set(kilnId, decision.state);
+            const picked = judged.filter((j) => j.variant === decision.variant && (decision.action === 'use' || decision.action === 'lock' ? j.ok : true))[0] || result;
+            result = picked;
+            if (decision.action === 'lock') {
+              result.preprocessState = 'locked';
+              lockToSave = decision.variant;
+            } else if (decision.action === 'use') {
+              result.preprocessState = 'locked';
+            } else if (decision.action === 'reseek') {
+              lockToSave = null;
+              const why = result.reason || '숫자를 찾지 못했습니다.';
+              holdForSearch(result, why + ' 인식이 여러 번 실패해 전처리를 다시 찾습니다.', 'reseek');
+            } else if (decision.action === 'conflict') {
+              holdForSearch(result, '전처리마다 다른 숫자가 나옵니다. 현재 온도 숫자만 네모 안에 있는지 확인하세요.', 'conflict');
+            } else if (decision.action === 'fail') {
+              result.preprocessState = 'locked';
+            } else {
+              const multi = judged.filter((j) => j.multiple)[0];
+              let why;
+              if (multi) why = multi.reason;
+              else if (decision.variant) {
+                why = '표시창에 맞는 전처리를 찾는 중입니다 (' +
+                  (VARIANT_LABELS[decision.variant] || decision.variant) + ', ' +
+                  decision.count + '/' + OCR_STABLE_READS + ').';
+              } else why = '표시창에 맞는 전처리를 찾는 중입니다.';
+              holdForSearch(result, why, 'searching');
+            }
+          }
         }
       }
     } catch (err) {
@@ -177,6 +252,7 @@ export function createReader(deps) {
     const stale = gen !== generation || !result || !camera.isRunning() ||
       !cur || cur.id !== kilnId || recognitionMode(cur) !== 'ocr';
     if (!stale) {
+      if (lockToSave !== undefined) rememberLock(lockToSave);
       result.elapsedMs = Math.round(now() - t0);
       result.attempts = attempts;
       result.source = source;
@@ -227,10 +303,15 @@ export function createReader(deps) {
   }
 
   // 다른 가마로 바뀜: 이전 가마 결과와 검증 기준을 지우고 처음부터
+  function clearSearch() {
+    searches.clear();
+  }
+
   function reset() {
     invalidate();
     settleKey = '';
     validators.clear();
+    clearSearch();
     publish(statusResult(recognitionMode(deps.getKiln()), 'waiting', '판독 대기 중'));
     deps.onActivity();
   }
@@ -241,7 +322,7 @@ export function createReader(deps) {
     tick();
   }
 
-  return { tick, invalidate, reset, requestNow, activity, resetValidation };
+  return { tick, invalidate, reset, requestNow, activity, resetValidation, clearSearch };
 }
 
 // 검증 상태 표시 문구
@@ -264,7 +345,7 @@ export function createLiveDisplay(els) {
     const v = res && res.validation;
     const temp = v ? v.validatedTemp : null;
     const ok = typeof temp === 'number';
-    els.liveTemp.textContent = ok ? String(temp) : '—';
+    els.liveTemp.textContent = ok ? formatTemp(temp) : '—';
     els.liveTemp.classList.toggle('is-empty', !ok);
 
     // 검증 상태 (OCR 신뢰도와 별개)

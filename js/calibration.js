@@ -5,9 +5,10 @@
 import {
   SEGMENTS, THRESHOLD_OFFSET_LIMIT, SHEAR_LIMIT, MIN_SEG_ON_RATIO, MAX_SEG_ON_RATIO,
   DEFAULT_DIGIT_ASPECT, MIN_DIGIT_ASPECT, MAX_DIGIT_ASPECT, OCR_PREPROCESS_OPTIONS, DEFAULT_OCR_PREPROCESS
-} from './config.js?v=0.3.7';
-import { confidenceText, confidenceLevel, recognitionMode, isReadResult, validationLabel } from './reading.js?v=0.3.7';
-import { VARIANT_LABELS } from './ocrPreprocess.js?v=0.3.7';
+} from './config.js?v=0.3.9';
+import { confidenceText, confidenceLevel, recognitionMode, isReadResult, validationLabel } from './reading.js?v=0.3.9';
+import { formatTemp } from './ocr.js?v=0.3.9';
+import { VARIANT_LABELS } from './ocrPreprocess.js?v=0.3.9';
 
 const DIAG_IMAGE_MAX_H = 120; // 진단 이미지 표시 높이 (CSS px 기준 캔버스 크기)
 
@@ -53,10 +54,15 @@ export function createCalibrationPanel(els, deps) {
     if (!k) return;
     const mode = recognitionMode(k);
     els.modeSelect.value = mode;
-    els.ocrOptions.hidden = mode !== 'ocr';
-    els.ocrDiag.hidden = mode !== 'ocr';
+    const ocrMode = mode === 'ocr';
+    els.ocrOptions.hidden = !ocrMode;
+    els.ocrDiag.hidden = !ocrMode;
     els.segOptions.hidden = mode !== 'sevenSegment';
     els.segDiag.hidden = mode !== 'sevenSegment';
+    if (els.digitsField) els.digitsField.hidden = ocrMode;
+    if (els.digitAspectField) els.digitAspectField.hidden = true;
+    if (els.redLedField) els.redLedField.hidden = ocrMode;
+    if (els.polarityField) els.polarityField.hidden = ocrMode;
 
     els.digitAspectInput.value = String(k.digitAspect);
     els.digitAspectValue.textContent = fmtAspect(k.digitAspect);
@@ -163,7 +169,7 @@ export function createCalibrationPanel(els, deps) {
     // 요약: 인식 결과, 신뢰도 (+ 7세그먼트는 임계값)
     els.calibSummary.textContent = '';
     els.calibSummary.appendChild(document.createTextNode('인식 결과 '));
-    els.calibSummary.appendChild(cell('strong', result.ok ? String(result.temp) : '"' + result.text + '"'));
+    els.calibSummary.appendChild(cell('strong', result.ok ? formatTemp(result.temp) : '"' + result.text + '"'));
     const conf = cell('span', ' · 신뢰도 ' + confidenceText(result.confidence), 'conf');
     conf.dataset.level = confidenceLevel(result.confidence);
     els.calibSummary.appendChild(conf);
@@ -178,7 +184,7 @@ export function createCalibrationPanel(els, deps) {
     if (v) {
       const why = v.warning || (v.status === 'unavailable' ? '' : v.reason);
       els.calibSummary.appendChild(cell('div', '시간 변화 검증: ' + validationLabel(v) +
-        (typeof v.validatedTemp === 'number' ? ' (' + v.validatedTemp + '°C 통과)' : ' (통과한 온도 없음)') +
+        (typeof v.validatedTemp === 'number' ? ' (' + formatTemp(v.validatedTemp) + '°C 통과)' : ' (통과한 온도 없음)') +
         (why ? ' — ' + why : ''), 'calib-reason'));
     }
 
@@ -192,38 +198,40 @@ export function createCalibrationPanel(els, deps) {
 
   // ===== OCR =====
   function renderOcrMatch(result) {
-    const k = deps.getKiln();
-    const digits = k ? k.digits : 4;
-    const typed = els.expectedInput.value.replace(/\D/g, '');
+    const typed = els.expectedInput.value.trim().replace(/\s+/g, '');
     if (!typed) {
       els.calibMatch.hidden = true;
       return;
     }
-    if (typed.length > digits) {
-      els.calibMatch.textContent = '실제 숫자가 자릿수(' + digits + '자리)보다 깁니다. 자릿수 설정을 확인하세요.';
+    if (!/^\d+(?:\.\d+)?$/.test(typed)) {
+      els.calibMatch.textContent = '실제 온도는 숫자와 소수점만 입력하세요. 예: 1187, 20.7';
       els.calibMatch.className = 'calib-match bad';
-    } else {
-      const same = result.candidate !== null && result.candidate === parseInt(typed, 10);
-      let text = same ? '일치합니다.' : '일치하지 않습니다. OCR에 넘긴 이미지에서 숫자가 또렷한지 확인하세요.';
-      if (same && !result.ok) text = '숫자는 맞게 읽었지만 판독 실패로 처리했습니다. (' + result.reason + ')';
-      els.calibMatch.textContent = text;
-      els.calibMatch.className = 'calib-match ' + (same && result.ok ? 'ok' : 'bad');
+      els.calibMatch.hidden = false;
+      return;
     }
+    const expected = typed.indexOf('.') >= 0 ? parseFloat(typed) : parseInt(typed, 10);
+    const same = result.candidate !== null && Math.abs(result.candidate - expected) < 0.001;
+    let text = same ? '일치합니다.' : '일치하지 않습니다. OCR에 넘긴 이미지에서 숫자가 또렷한지 확인하세요.';
+    if (same && !result.ok) text = '숫자는 맞게 읽었지만 판독 실패로 처리했습니다. (' + result.reason + ')';
+    els.calibMatch.textContent = text;
+    els.calibMatch.className = 'calib-match ' + (same && result.ok ? 'ok' : 'bad');
     els.calibMatch.hidden = false;
   }
 
   function renderOcr(result) {
     els.ocrRaw.textContent = rawLabel(result.rawText);
     if (result.ok) {
-      els.ocrValue.textContent = result.temp + '°C';
+      els.ocrValue.textContent = formatTemp(result.temp) + '°C';
     } else if (result.candidate !== null) {
-      els.ocrValue.textContent = result.candidate + ' (확정하지 않음)';
+      els.ocrValue.textContent = formatTemp(result.candidate) + ' (확정하지 않음)';
     } else {
       els.ocrValue.textContent = '없음';
     }
     els.ocrConf.textContent = confidenceText(result.confidence);
     els.ocrTime.textContent = typeof result.elapsedMs === 'number' ? result.elapsedMs + 'ms' : '—';
-    els.ocrVariant.textContent = VARIANT_LABELS[result.variant] || '—';
+    const variantName = VARIANT_LABELS[result.variant] || '—';
+    const stateNote = result.preprocessState === 'locked' ? ' · 유지' : (result.preprocessState === 'searching' ? ' · 탐색' : '');
+    els.ocrVariant.textContent = variantName + stateNote;
 
     // 기본 전처리에서 실패해 다른 전처리도 시험했으면 시도 내역 표시
     const attempts = result.attempts || [];

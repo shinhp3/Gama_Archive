@@ -7,7 +7,7 @@
 import {
   TEMP_MIN, TEMP_MAX, VALID_RATE_DEG_PER_SEC, VALID_MIN_DELTA, VALID_MAX_DELTA,
   VALID_INIT_CONFIRM_COUNT, VALID_RECHECK_COUNT, VALID_CANDIDATE_TOLERANCE, VALID_HISTORY_SIZE
-} from './config.js?v=0.3.7';
+} from './config.js?v=0.3.9';
 
 /**
  * 검증 상태 (phase)

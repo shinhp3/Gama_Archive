@@ -3,25 +3,95 @@
 // 픽셀 계산은 DOM 없이 쓸 수 있는 순수 함수, canvas 처리는 createOcrPreprocessor에서만
 
 import {
-  OCR_TARGET_H, OCR_PAD_RATIO, OCR_CLOSE_RATIO, OCR_THICKEN_RATIO, OCR_SATURATED_R, OCR_SATURATED_GB
-} from './config.js?v=0.3.7';
-import { otsuThreshold } from './recognizer.js?v=0.3.7';
-import { kilnSourceRegion } from './roi.js?v=0.3.7';
+  OCR_TARGET_H, OCR_PAD_RATIO, OCR_CLOSE_RATIO, OCR_THICKEN_RATIO, OCR_SATURATED_R, OCR_SATURATED_GB,
+  OCR_VARIANTS, OCR_STABLE_READS, OCR_RESEEK_FAILS
+} from './config.js?v=0.3.9';
+import { otsuThreshold } from './recognizer.js?v=0.3.9';
+import { kilnSourceRegion } from './roi.js?v=0.3.9';
 
 // 전처리 방식 이름 (판독 보정 화면 표시용)
 export const VARIANT_LABELS = {
-  red: '빨간 LED 강조 이진화',
-  gray: '흑백 이진화',
+  red: '빨간 LED 강조',
+  lcd: '어두운 숫자 LCD 대비',
+  gray: '일반 그레이스케일',
+  bin: '이진화',
+  binInv: '이진화 반전',
   contrast: '대비 조정 원본'
 };
 
+export function allOcrVariants() {
+  return OCR_VARIANTS.slice();
+}
+
 function clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
 
-// OCR에 넘길 전처리 순서. 자동이면 기본 방식 하나를 먼저 쓰고, 실패했을 때만 나머지를 차례로 시험
-export function variantOrder(kiln) {
-  const pick = kiln.ocrPreprocess;
-  if (pick && pick !== 'auto' && VARIANT_LABELS[pick]) return [pick];
-  return kiln.redLedMode ? ['red', 'gray', 'contrast'] : ['gray', 'contrast', 'red'];
+// OCR에 넘길 전처리 순서.
+// 수동 선택이면 그 방식만. 자동에서 유지 중인 방식이 있으면 그것만. 아니면 후보 전체(탐색).
+export function variantOrder(kiln, lockedVariant) {
+  const pick = kiln && kiln.ocrPreprocess;
+  if (pick && pick !== 'auto' && VARIANT_LABELS[pick] && OCR_VARIANTS.indexOf(pick) >= 0) return [pick];
+  if (pick === 'contrast') return ['lcd'];
+  if ((!pick || pick === 'auto') && lockedVariant && OCR_VARIANTS.indexOf(lockedVariant) >= 0) return [lockedVariant];
+  return allOcrVariants();
+}
+
+/**
+ * 전처리 자동 선택 상태 한 칸 진행.
+ * 신뢰도(이미 ok로 걸러진 결과)와 여러 프레임에서 같은 숫자가 반복되는지를 함께 봄.
+ * 서로 다른 숫자가 둘 다 안정되면 하나를 고르지 않음.
+ * @param {{ pending: Object, failStreak: number }|null} prev
+ * @param {Array<{ variant: string, ok: boolean, text: string, confidence: number }>} attempts
+ * @param {string|null} lockedVariant 이미 유지 중인 방식. 없으면 탐색
+ * @returns {{ state: { pending: Object, failStreak: number }, action: string, variant: string|null, text: string, count: number }}
+ */
+export function advanceVariantLock(prev, attempts, lockedVariant) {
+  const pending = {};
+  const prevPending = (prev && prev.pending) || {};
+  Object.keys(prevPending).forEach((key) => { pending[key] = prevPending[key]; });
+  let failStreak = prev && prev.failStreak ? prev.failStreak : 0;
+  const oks = (attempts || []).filter((a) => a && a.ok && a.text);
+
+  if (lockedVariant) {
+    const hit = oks.filter((a) => a.variant === lockedVariant)[0];
+    if (hit) {
+      return { state: { pending: {}, failStreak: 0 }, action: 'use', variant: lockedVariant, text: hit.text, count: 0 };
+    }
+    failStreak += 1;
+    if (failStreak >= OCR_RESEEK_FAILS) {
+      return { state: { pending: {}, failStreak: 0 }, action: 'reseek', variant: null, text: '', count: 0 };
+    }
+    return { state: { pending, failStreak }, action: 'fail', variant: lockedVariant, text: '', count: 0 };
+  }
+
+  const seen = {};
+  oks.forEach((a) => {
+    const before = pending[a.variant];
+    const count = before && before.text === a.text ? before.count + 1 : 1;
+    pending[a.variant] = { text: a.text, count, confidence: a.confidence || 0 };
+    seen[a.variant] = true;
+  });
+  Object.keys(pending).forEach((key) => { if (!seen[key]) delete pending[key]; });
+  const state = { pending, failStreak: 0 };
+
+  const ranked = Object.keys(pending).map((variant) => ({
+    variant,
+    text: pending[variant].text,
+    count: pending[variant].count,
+    confidence: pending[variant].confidence
+  })).sort((a, b) => b.count - a.count || b.confidence - a.confidence || (a.variant < b.variant ? -1 : 1));
+
+  if (!ranked.length) {
+    return { state, action: 'searching', variant: null, text: '', count: 0 };
+  }
+  const top = ranked[0];
+  const conflict = ranked.some((r) => r.count >= OCR_STABLE_READS && r.text !== top.text);
+  if (top.count >= OCR_STABLE_READS && conflict) {
+    return { state, action: 'conflict', variant: top.variant, text: top.text, count: top.count };
+  }
+  if (top.count >= OCR_STABLE_READS) {
+    return { state: { pending: {}, failStreak: 0 }, action: 'lock', variant: top.variant, text: top.text, count: top.count };
+  }
+  return { state, action: 'searching', variant: top.variant, text: top.text, count: top.count };
 }
 
 // 일반 밝기
@@ -110,6 +180,12 @@ export function maskToRgba(mask) {
   return out;
 }
 
+function meanOf(score) {
+  let sum = 0;
+  for (let i = 0; i < score.length; i++) sum += score[i];
+  return score.length ? sum / score.length : 128;
+}
+
 // 밝기 하위 2%~상위 2%를 0~255로 늘린 흑백 RGBA. invert면 밝은 숫자를 검게 뒤집음
 export function contrastRgba(gray, invert) {
   const n = gray.length;
@@ -140,20 +216,35 @@ export function contrastRgba(gray, invert) {
  * @param {'red'|'gray'|'contrast'} variant
  * @param {{ polarity: string, thresholdOffset: number }} kiln
  */
+function binaryVariant(score, W, H, brightDigits, offset) {
+  const bin = binarize(score, brightDigits, offset);
+  const closed = closeMask(bin.mask, W, H, Math.max(1, Math.round(H * OCR_CLOSE_RATIO)));
+  const thick = thickenMask(closed, W, H, Math.max(1, Math.round(H * OCR_THICKEN_RATIO)));
+  return { rgba: maskToRgba(thick), otsu: bin.otsu, threshold: bin.threshold };
+}
+
 export function processVariant(img, variant, kiln) {
   const W = img.width;
   const H = img.height;
   const n = W * H;
-  const brightPolarity = kiln.polarity !== 'dark';
-  if (variant === 'contrast') {
-    return { rgba: contrastRgba(grayOf(img.data, n), brightPolarity), otsu: null, threshold: null };
+  const gray = grayOf(img.data, n);
+  const offset = kiln.thresholdOffset;
+  // 어두운 숫자 LCD: 대비를 늘리고 숫자(어두운 획)는 검게 유지
+  if (variant === 'lcd' || variant === 'contrast') {
+    return { rgba: contrastRgba(gray, false), otsu: null, threshold: null };
   }
-  const score = variant === 'red' ? redScoreOf(img.data, n) : grayOf(img.data, n);
-  // 빨간 정도는 높을수록 LED이므로 숫자 극성과 관계없이 밝은 쪽이 숫자
-  const bin = binarize(score, variant === 'red' ? true : brightPolarity, kiln.thresholdOffset);
-  const closed = closeMask(bin.mask, W, H, Math.max(1, Math.round(H * OCR_CLOSE_RATIO)));
-  const thick = thickenMask(closed, W, H, Math.max(1, Math.round(H * OCR_THICKEN_RATIO)));
-  return { rgba: maskToRgba(thick), otsu: bin.otsu, threshold: bin.threshold };
+  // 일반 그레이스케일: 배경이 어두우면(밝은 숫자) 뒤집어서 흰 바탕 검은 숫자로
+  if (variant === 'gray') {
+    return { rgba: contrastRgba(gray, meanOf(gray) < 128), otsu: null, threshold: null };
+  }
+  if (variant === 'red') {
+    return binaryVariant(redScoreOf(img.data, n), W, H, true, offset);
+  }
+  if (variant === 'binInv') {
+    return binaryVariant(gray, W, H, false, offset);
+  }
+  // bin: 밝은 숫자를 이진화
+  return binaryVariant(gray, W, H, true, offset);
 }
 
 /**

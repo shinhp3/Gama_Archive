@@ -5,9 +5,10 @@
 import {
   ROI_COLOR, PREVIEW_MAX_W, PREVIEW_MAX_H, DEFAULT_DIGITS, DEFAULT_DIGIT_ASPECT,
   DEFAULT_GUIDE_WIDTH_RATIO, MIN_GUIDE_WIDTH_RATIO, MAX_GUIDE_WIDTH_RATIO, GUIDE_WIDTH_STEP,
+  DEFAULT_GUIDE_ASPECT, MIN_GUIDE_ASPECT, MAX_GUIDE_ASPECT, GUIDE_ASPECT_STEP,
   MAX_ROTATION_DEG, ROTATION_STEP_DEG,
   GUIDE_MAX_HEIGHT_RATIO, MIN_ZOOM, MAX_ZOOM, ZOOM_STEP
-} from './config.js?v=0.3.7';
+} from './config.js?v=0.3.9';
 
 function clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
 function round3(v) { return Math.round(v * 1000) / 1000; }
@@ -107,9 +108,10 @@ export function fitBox(cw, ch, vw, vh) {
   return { x: (cw - w) / 2, y: (ch - h) / 2, w, h };
 }
 
-// 가이드 틀 크기: 비율 = 자릿수 × 자릿수 폭/높이 비율, 폭은 영상 영역 폭 × widthRatio(가마별 설정), 높이를 넘지 않게
-export function guideSize(cw, ch, digits, digitAspect, widthRatio) {
-  const ratio = digits * digitAspect;
+// 가이드 틀 크기: 폭은 영상 영역 폭 × widthRatio, 높이는 가로세로 비율(aspect = 폭/높이)로 정함.
+// 자릿수와 무관. 높이가 화면을 넘으면 비율을 유지한 채 줄임.
+export function guideSize(cw, ch, widthRatio, aspect) {
+  const ratio = clamp(isFinite(aspect) ? aspect : DEFAULT_GUIDE_ASPECT, MIN_GUIDE_ASPECT, MAX_GUIDE_ASPECT);
   let w = cw * clamp(widthRatio || DEFAULT_GUIDE_WIDTH_RATIO, MIN_GUIDE_WIDTH_RATIO, MAX_GUIDE_WIDTH_RATIO);
   let h = w / ratio;
   const maxH = ch * GUIDE_MAX_HEIGHT_RATIO;
@@ -118,6 +120,12 @@ export function guideSize(cw, ch, digits, digitAspect, widthRatio) {
     w = h * ratio;
   }
   return { w, h };
+}
+
+export function clampGuideAspect(aspect) {
+  const r = clamp(isFinite(aspect) ? aspect : DEFAULT_GUIDE_ASPECT, MIN_GUIDE_ASPECT, MAX_GUIDE_ASPECT);
+  const stepped = Math.round(r / GUIDE_ASPECT_STEP) * GUIDE_ASPECT_STEP;
+  return Math.round(stepped * 100) / 100;
 }
 
 // 틀 회전: 회전각(라디안)과 회전된 틀을 덮는 사각형 크기(bw, bh)를 덧붙임
@@ -218,6 +226,7 @@ function zoomToSlider(z) {
  *   previewPlaceholder: HTMLElement, zoomBar: HTMLElement, zoomInput: HTMLInputElement, zoomValue: HTMLElement,
  *   zoomInBtn: HTMLButtonElement, zoomOutBtn: HTMLButtonElement, zoomResetBtn: HTMLButtonElement,
  *   guideBar: HTMLElement, guideInput: HTMLInputElement, guideValue: HTMLElement,
+ *   aspectBar: HTMLElement, aspectInput: HTMLInputElement, aspectValue: HTMLElement,
  *   rotateBar: HTMLElement, rotateInput: HTMLInputElement, rotateValue: HTMLElement,
  *   rotateMinusBtn: HTMLButtonElement, rotatePlusBtn: HTMLButtonElement, rotateResetBtn: HTMLButtonElement }} els
  * @param {{ camera: object, getKiln: Function, onCommit: Function }} deps
@@ -244,8 +253,16 @@ export function createRoiEditor(els, deps) {
     return k && k.guideWidthRatio ? k.guideWidthRatio : DEFAULT_GUIDE_WIDTH_RATIO;
   }
 
+  // 가마의 틀 가로/세로. 저장값이 없으면 이전 자릿수×자릿수 비율로 같은 모양을 유지
+  function guideAspectOf(k) {
+    if (k && isFinite(k.guideAspect) && k.guideAspect > 0) return k.guideAspect;
+    const digits = k && k.digits ? k.digits : DEFAULT_DIGITS;
+    const digitAspect = k && k.digitAspect ? k.digitAspect : DEFAULT_DIGIT_ASPECT;
+    return digits * digitAspect;
+  }
+
   // 지금 화면 크기·영상 해상도·가마 설정으로 정해지는 배치 (카메라가 꺼져 있으면 null)
-  // over: { guideWidthRatio, rotationDeg } 중 주어진 값은 가마에 저장된 값 대신 사용
+  // over: { guideWidthRatio, guideAspect, rotationDeg } 중 주어진 값은 가마에 저장된 값 대신 사용
   function layout(over) {
     const cw = overlay.clientWidth;
     const ch = overlay.clientHeight;
@@ -253,8 +270,8 @@ export function createRoiEditor(els, deps) {
     if (!camera.isRunning() || !size.width || !size.height || !cw || !ch) return null;
     const k = deps.getKiln();
     const o = over || {};
-    const guide = guideSize(cw, ch, k ? k.digits : DEFAULT_DIGITS, k ? k.digitAspect : DEFAULT_DIGIT_ASPECT,
-      o.guideWidthRatio || guideRatioOf(k));
+    const aspect = o.guideAspect !== undefined ? o.guideAspect : guideAspectOf(k);
+    const guide = guideSize(cw, ch, o.guideWidthRatio || guideRatioOf(k), aspect);
     const deg = o.rotationDeg !== undefined ? o.rotationDeg : (k ? k.rotationDeg : 0);
     return {
       cw,
@@ -366,17 +383,20 @@ export function createRoiEditor(els, deps) {
     ctx.translate(gx, gy);
     ctx.rotate(angle);
 
-    // 자릿수 칸 구분선
-    const digits = k ? k.digits : DEFAULT_DIGITS;
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = 'rgba(255, 212, 0, 0.6)';
-    ctx.beginPath();
-    for (let i = 1; i < digits; i++) {
-      const x = angle ? -gw / 2 + gw * i / digits : Math.round(gx - gw / 2 + gw * i / digits) + 0.5 - gx;
-      ctx.moveTo(x, -gh / 2);
-      ctx.lineTo(x, gh / 2);
+    // 7세그먼트 모드에서만 자릿수 칸 구분선. OCR은 숫자 전체를 한 사각형으로 읽음
+    const segMode = k && k.recognitionMode === 'sevenSegment';
+    if (segMode) {
+      const digits = k.digits || DEFAULT_DIGITS;
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(255, 212, 0, 0.6)';
+      ctx.beginPath();
+      for (let i = 1; i < digits; i++) {
+        const x = angle ? -gw / 2 + gw * i / digits : Math.round(gx - gw / 2 + gw * i / digits) + 0.5 - gx;
+        ctx.moveTo(x, -gh / 2);
+        ctx.lineTo(x, gh / 2);
+      }
+      ctx.stroke();
     }
-    ctx.stroke();
 
     // 세그먼트 샘플 위치 (켜짐 = 초록, 꺼짐 = 흰색). 확대/이동 중에는 위치가 맞지 않으므로 생략
     if (samples && hasRoi && !gesture) {
@@ -487,6 +507,22 @@ export function createRoiEditor(els, deps) {
     setView(L2, clampView(L2.base, L2.guide, view), soon, { guideWidthRatio: next });
   }
 
+  // 틀 가로세로만 바꿈. 배율과 틀 가운데의 프레임 위치는 유지해 숫자 가장자리 여백을 조절
+  function setGuideAspect(aspect, soon) {
+    const k = deps.getKiln();
+    if (!k) return;
+    const next = clampGuideAspect(aspect);
+    const L = layout();
+    if (!L) {
+      deps.onCommit({ guideAspect: next }, soon);
+      scheduleDraw();
+      return;
+    }
+    const view = resolveView(L);
+    const L2 = layout({ guideAspect: next });
+    setView(L2, clampView(L2.base, L2.guide, view), soon, { guideAspect: next });
+  }
+
   // 틀 회전: 틀 크기 변경과 같이 배율·틀 가운데의 프레임 위치는 그대로 두고 회전각만 바꿔 영역을 다시 계산
   // (회전된 틀이 영상 밖으로 나가게 되면 최소 배율·이동 범위에 맞춰 조정)
   function setRotation(deg, soon) {
@@ -514,6 +550,12 @@ export function createRoiEditor(els, deps) {
     els.guideValue.textContent = pct + '%';
     // 슬라이더를 움직이는 중에는 값이 같으므로 건드리지 않음
     if (parseInt(els.guideInput.value, 10) !== pct) els.guideInput.value = String(pct);
+
+    const aspect = guideAspectOf(k);
+    els.aspectValue.textContent = aspect.toFixed(2) + ':1';
+    if (Math.abs(parseFloat(els.aspectInput.value) - aspect) > GUIDE_ASPECT_STEP / 2) {
+      els.aspectInput.value = String(aspect);
+    }
 
     const deg = rotationOf(k);
     els.rotateValue.textContent = (deg > 0 ? '+' : '') + deg.toFixed(1) + '°';
@@ -623,6 +665,7 @@ export function createRoiEditor(els, deps) {
     overlay.classList.toggle('readonly', !editable);
     els.zoomBar.hidden = !editable;
     els.guideBar.hidden = !editable;
+    els.aspectBar.hidden = !editable;
     els.rotateBar.hidden = !editable;
     if (editable) {
       // 조작을 시작하면 지금 틀이 가리키는 곳을 바로 영역으로 지정
@@ -718,6 +761,13 @@ export function createRoiEditor(els, deps) {
     els.guideInput.step = String(Math.round(GUIDE_WIDTH_STEP * 100));
     els.guideInput.addEventListener('input', () => {
       setGuideWidth((parseInt(els.guideInput.value, 10) || 0) / 100, true);
+    });
+
+    els.aspectInput.min = String(MIN_GUIDE_ASPECT);
+    els.aspectInput.max = String(MAX_GUIDE_ASPECT);
+    els.aspectInput.step = String(GUIDE_ASPECT_STEP);
+    els.aspectInput.addEventListener('input', () => {
+      setGuideAspect(parseFloat(els.aspectInput.value), true);
     });
 
     els.rotateInput.min = String(-MAX_ROTATION_DEG);

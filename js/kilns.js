@@ -8,12 +8,13 @@ import {
   THRESHOLD_OFFSET_LIMIT, SHEAR_LIMIT, DEFAULT_SEG_ON_RATIO, MIN_SEG_ON_RATIO, MAX_SEG_ON_RATIO,
   DEFAULT_DIGIT_ASPECT, MIN_DIGIT_ASPECT, MAX_DIGIT_ASPECT, MIN_ZOOM, MAX_ZOOM,
   DEFAULT_GUIDE_WIDTH_RATIO, MIN_GUIDE_WIDTH_RATIO, MAX_GUIDE_WIDTH_RATIO, MAX_ROTATION_DEG, ROTATION_STEP_DEG,
-  RECOGNITION_MODES, DEFAULT_RECOGNITION_MODE, OCR_PREPROCESS_OPTIONS, DEFAULT_OCR_PREPROCESS
-} from './config.js?v=0.3.7';
+  MIN_GUIDE_ASPECT, MAX_GUIDE_ASPECT,
+  RECOGNITION_MODES, DEFAULT_RECOGNITION_MODE, OCR_PREPROCESS_OPTIONS, OCR_VARIANTS, DEFAULT_OCR_PREPROCESS
+} from './config.js?v=0.3.9';
 import {
   getKilns, putKiln, deleteKiln, getPref, setPref, removePref,
   readLegacyKilns, clearLegacyKilns
-} from './db.js?v=0.3.7';
+} from './db.js?v=0.3.9';
 
 const SAVE_DELAY_MS = 400; // 슬라이더처럼 값이 연속으로 바뀔 때 모았다가 저장하는 시간
 
@@ -24,6 +25,23 @@ function numInRange(v, min, max, def) { return (isNum(v) && v >= min && v <= max
 function makeId() {
   if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
   return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+}
+
+function round2(v) { return Math.round(v * 100) / 100; }
+
+// 저장된 전처리. 예전 'contrast'는 어두운 숫자 LCD 대비로 이어받음
+function normalizePreprocess(v) {
+  if (v === 'contrast') return 'lcd';
+  return OCR_PREPROCESS_OPTIONS.indexOf(v) >= 0 ? v : DEFAULT_OCR_PREPROCESS;
+}
+
+// 틀 가로/세로. 없으면 예전 자릿수×자릿수 비율로 같은 사각형을 유지. 범위 밖이면 그 복원값 사용
+function guideAspectOf(raw, digits) {
+  const digitAspect = numInRange(raw.digitAspect, MIN_DIGIT_ASPECT, MAX_DIGIT_ASPECT, DEFAULT_DIGIT_ASPECT);
+  const legacy = round2(Math.min(MAX_GUIDE_ASPECT, Math.max(MIN_GUIDE_ASPECT, digits * digitAspect)));
+  if (!isNum(raw.guideAspect)) return legacy;
+  if (raw.guideAspect < MIN_GUIDE_ASPECT || raw.guideAspect > MAX_GUIDE_ASPECT) return legacy;
+  return round2(raw.guideAspect);
 }
 
 function isValidRoi(r) {
@@ -62,6 +80,8 @@ export function sanitizeKiln(raw) {
     digitAspect: numInRange(raw.digitAspect, MIN_DIGIT_ASPECT, MAX_DIGIT_ASPECT, DEFAULT_DIGIT_ASPECT),
     // 노란 틀 폭 (영상 영역 폭 대비). 저장되지 않은 이전 가마는 기본값
     guideWidthRatio: numInRange(raw.guideWidthRatio, MIN_GUIDE_WIDTH_RATIO, MAX_GUIDE_WIDTH_RATIO, DEFAULT_GUIDE_WIDTH_RATIO),
+    // 노란 틀 가로/세로. 저장되지 않은 이전 가마는 자릿수×자릿수 비율로 같은 모양을 유지
+    guideAspect: guideAspectOf(raw, digits),
     // 틀 회전각 (영역 roi 중심 기준, 양수 = 시계 방향). 저장되지 않은 이전 가마는 0°
     rotationDeg: Math.round(numInRange(raw.rotationDeg, -MAX_ROTATION_DEG, MAX_ROTATION_DEG, 0) / ROTATION_STEP_DEG) * ROTATION_STEP_DEG || 0,
     polarity: raw.polarity === 'dark' ? 'dark' : DEFAULT_POLARITY,
@@ -72,7 +92,9 @@ export function sanitizeKiln(raw) {
     readIntervalSec: READ_INTERVAL_OPTIONS.indexOf(raw.readIntervalSec) >= 0 ? raw.readIntervalSec : DEFAULT_READ_INTERVAL_SEC,
     // 인식 방식이 저장되지 않은 이전 가마는 OCR
     recognitionMode: RECOGNITION_MODES.indexOf(raw.recognitionMode) >= 0 ? raw.recognitionMode : DEFAULT_RECOGNITION_MODE,
-    ocrPreprocess: OCR_PREPROCESS_OPTIONS.indexOf(raw.ocrPreprocess) >= 0 ? raw.ocrPreprocess : DEFAULT_OCR_PREPROCESS,
+    ocrPreprocess: normalizePreprocess(raw.ocrPreprocess),
+    // 자동 탐색으로 고정한 전처리. 없거나 알 수 없는 값이면 다시 탐색
+    ocrLockedVariant: OCR_VARIANTS.indexOf(raw.ocrLockedVariant) >= 0 ? raw.ocrLockedVariant : null,
     ocrSmooth: raw.ocrSmooth !== false,  // OCR 입력 확대 보간: true = 부드럽게, false = 최근접 이웃
     createdAt: isNum(raw.createdAt) ? raw.createdAt : Date.now()
   };
@@ -192,9 +214,10 @@ export function createKilnManager(els, hooks) {
   function clearAllRois() {
     flushSave();
     const hadRoi = kilns.some((k) => k.roi);
-    kilns.filter((k) => k.roi || k.view).forEach((k) => {
+    kilns.filter((k) => k.roi || k.view || k.ocrLockedVariant).forEach((k) => {
       k.roi = null;
       k.view = null;
+      k.ocrLockedVariant = null;
       putKiln(k).catch(reportError);
     });
     return hadRoi;

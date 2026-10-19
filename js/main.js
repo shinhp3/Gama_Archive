@@ -1,21 +1,21 @@
 // ===== 진입점 =====
 // 화면 요소를 찾아 각 모듈을 연결하고, 탭 전환과 이벤트 처리를 담당
 
-import { APP_VERSION, PREVIEW_INTERVAL_MS, LIVE_READ_MS, CAMERA_IDEAL_W, CAMERA_IDEAL_H } from './config.js?v=0.3.7';
-import { initDb } from './db.js?v=0.3.7';
-import { createCamera } from './camera.js?v=0.3.7';
-import { createRoiEditor, kilnSourceRegion } from './roi.js?v=0.3.7';
-import { createKilnManager } from './kilns.js?v=0.3.7';
-import { createReader, createLiveDisplay, recognitionMode } from './reading.js?v=0.3.7';
-import { createOcrEngine } from './ocr.js?v=0.3.7';
-import { createOcrPreprocessor } from './ocrPreprocess.js?v=0.3.7';
-import { createCalibrationPanel } from './calibration.js?v=0.3.7';
-import { segmentQuads } from './recognizer.js?v=0.3.7';
-import { createRecorder } from './recorder.js?v=0.3.7';
-import { createHistoryView } from './history.js?v=0.3.7';
+import { APP_VERSION, PREVIEW_INTERVAL_MS, LIVE_READ_MS, CAMERA_IDEAL_W, CAMERA_IDEAL_H } from './config.js?v=0.3.9';
+import { initDb } from './db.js?v=0.3.9';
+import { createCamera } from './camera.js?v=0.3.9';
+import { createRoiEditor, kilnSourceRegion } from './roi.js?v=0.3.9';
+import { createKilnManager } from './kilns.js?v=0.3.9';
+import { createReader, createLiveDisplay, recognitionMode } from './reading.js?v=0.3.9';
+import { createOcrEngine } from './ocr.js?v=0.3.9';
+import { createOcrPreprocessor } from './ocrPreprocess.js?v=0.3.9';
+import { createCalibrationPanel } from './calibration.js?v=0.3.9';
+import { segmentQuads } from './recognizer.js?v=0.3.9';
+import { createRecorder } from './recorder.js?v=0.3.9';
+import { createHistoryView } from './history.js?v=0.3.9';
 
 const TABS = ['record', 'history'];
-const ROI_RESET_MESSAGE = '화면 방향이 바뀌어 영역이 초기화되었습니다. 영역 버튼을 눌러 숫자를 노란 틀에 다시 맞춰 주세요.';
+const ROI_RESET_MESSAGE = '화면 방향이 바뀌어 영역이 초기화되었습니다. 영역 버튼을 눌러 온도 숫자 전체가 노란 네모 안에 들어오도록 다시 맞춰 주세요.';
 
 // 주소에 ?debug=1 을 붙이면 카메라 해상도와 확대/영역 값을 영상 아래에 표시
 function isDebugMode() {
@@ -70,6 +70,9 @@ function getElements() {
     guideBar: $('guideBar'),
     guideInput: $('guideInput'),
     guideValue: $('guideValue'),
+    aspectBar: $('aspectBar'),
+    aspectInput: $('aspectInput'),
+    aspectValue: $('aspectValue'),
     rotateBar: $('rotateBar'),
     rotateInput: $('rotateInput'),
     rotateValue: $('rotateValue'),
@@ -137,9 +140,13 @@ function getElements() {
       binaryCanvas: $('binaryCanvas'),
       calibTableWrap: $('calibTableWrap'),
       calibRows: $('calibRows'),
+      digitsField: $('digitsField'),
+      digitAspectField: $('digitAspectField'),
       digitAspectInput: $('digitAspectInput'),
       digitAspectValue: $('digitAspectValue'),
+      redLedField: $('redLedField'),
       redLedInput: $('redLedInput'),
+      polarityField: $('polarityField'),
       polaritySelect: $('polaritySelect'),
       thresholdInput: $('thresholdInput'),
       thresholdValue: $('thresholdValue'),
@@ -201,6 +208,9 @@ function startApp() {
       guideBar: els.guideBar,
       guideInput: els.guideInput,
       guideValue: els.guideValue,
+      aspectBar: els.aspectBar,
+      aspectInput: els.aspectInput,
+      aspectValue: els.aspectValue,
       rotateBar: els.rotateBar,
       rotateInput: els.rotateInput,
       rotateValue: els.rotateValue,
@@ -226,7 +236,13 @@ function startApp() {
     preprocessor: createOcrPreprocessor(camera),
     getKiln: () => kilns.current(),
     onResult: handleReading,
-    onActivity: updateActivity
+    onActivity: updateActivity,
+    onLockVariant: (variant) => {
+      const k = kilns.current();
+      if (!k || k.ocrPreprocess !== 'auto') return;
+      if ((k.ocrLockedVariant || null) === (variant || null)) return;
+      kilns.update({ ocrLockedVariant: variant }, false);
+    }
   });
 
   const live = createLiveDisplay(els);
@@ -346,7 +362,10 @@ function startApp() {
     const v = roi.currentView();
     if (v) lines.push('배율 ' + v.zoom.toFixed(2) + ' · 중심 ' + v.cx.toFixed(4) + ', ' + v.cy.toFixed(4));
     const k = kilns.current();
-    if (k) lines.push('틀 폭 ' + Math.round(k.guideWidthRatio * 100) + '% · 회전 ' + (k.rotationDeg > 0 ? '+' : '') + k.rotationDeg.toFixed(1) + '° (양수 = 시계 방향)');
+    if (k) {
+      lines.push('틀 너비 ' + Math.round(k.guideWidthRatio * 100) + '% · 가로세로 ' + k.guideAspect.toFixed(2) + ':1 · 회전 ' +
+        (k.rotationDeg > 0 ? '+' : '') + k.rotationDeg.toFixed(1) + '° (양수 = 시계 방향)');
+    }
     if (k && k.roi) {
       lines.push('영역 x ' + k.roi.x.toFixed(4) + ' y ' + k.roi.y.toFixed(4) + ' w ' + k.roi.w.toFixed(4) + ' h ' + k.roi.h.toFixed(4));
       const size = camera.videoSize();
@@ -434,6 +453,7 @@ function startApp() {
     roi.cancelGesture();
     reader.invalidate();
     setRoiEditing(false);
+    reader.clearSearch();
     if (kilns.clearAllRois()) {
       showMessage(ROI_RESET_MESSAGE, 'error');
     }
@@ -486,7 +506,7 @@ function startApp() {
     roi.setEditable(next);
     els.roiEditBtn.setAttribute('aria-pressed', next ? 'true' : 'false');
     if (next) {
-      showMessage('두 손가락으로 벌리거나 오므려 확대/축소하고, 한 손가락으로 끌어 온도 숫자를 노란 틀에 맞추세요. 다 되면 영역 버튼을 다시 누르세요.', 'ok');
+      showMessage('온도 숫자 전체가 노란 네모 안에 들어오게 확대·이동하세요. 틀 너비와 가로세로로 여백을 맞출 수 있습니다. 프로그램 번호, 시간, 목표 온도는 넣지 마세요.', 'ok');
     } else {
       hideMessage();
     }
@@ -506,9 +526,9 @@ function startApp() {
     const k = kilns.current();
     if (!k || k.roi || roi.isEditable()) return;
     if (camera.isRunning()) {
-      showMessage('영역 버튼을 누른 뒤 영상을 확대·이동해 온도 숫자를 노란 틀에 맞추세요.', 'ok');
+      showMessage('영역 버튼을 누른 뒤, 온도 숫자 전체가 노란 네모 안에 들어오도록 맞추세요.', 'ok');
     } else {
-      showMessage('"카메라 시작"을 누른 뒤 영역 버튼으로 온도 숫자를 노란 틀에 맞추세요.', 'ok');
+      showMessage('"카메라 시작"을 누른 뒤 영역 버튼으로 온도 숫자를 노란 네모 안에 맞추세요.', 'ok');
     }
   }
 

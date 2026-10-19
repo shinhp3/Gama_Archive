@@ -1,6 +1,6 @@
 // ===== 앱 전체에서 쓰는 상수 =====
 
-export const APP_VERSION = 'v0.3.7';
+export const APP_VERSION = 'v0.3.9';
 
 // ===== 저장소 =====
 export const DB_NAME = 'kiln-recorder';
@@ -31,13 +31,18 @@ export const CAMERA_IDEAL_W = 1920;    // 후면 카메라 요청 해상도 (지
 export const CAMERA_IDEAL_H = 1080;
 
 // ===== 영역(ROI) 지정 화면: 고정된 가이드 틀 + 영상 확대/이동 =====
-export const DEFAULT_DIGIT_ASPECT = 0.6;     // 자릿수 한 칸의 폭/높이 비율 (틀 비율 = 자릿수 × 이 값)
+export const DEFAULT_DIGIT_ASPECT = 0.6;     // 이전 틀 비율 복원용 (자릿수 × 이 값). OCR 가이드는 더 이상 이 값으로 만들지 않음
 export const MIN_DIGIT_ASPECT = 0.3;
 export const MAX_DIGIT_ASPECT = 1.2;
 export const DEFAULT_GUIDE_WIDTH_RATIO = 0.4; // 틀 폭 = 영상 영역 폭 × 이 값 (가마별로 조절, 저장값이 없으면 기본)
 export const MIN_GUIDE_WIDTH_RATIO = 0.2;
 export const MAX_GUIDE_WIDTH_RATIO = 0.8;
 export const GUIDE_WIDTH_STEP = 0.01;
+// 틀 가로/세로. 숫자 전체를 한 사각형에 담으며, 자릿수와 무관하게 가마별로 저장
+export const DEFAULT_GUIDE_ASPECT = 2.4;      // 가로:세로 = 2.4:1 (이전 4자리 × 0.6과 같은 기본 모양)
+export const MIN_GUIDE_ASPECT = 0.3;          // 작을수록 세로로 김 (숫자 위아래 여백)
+export const MAX_GUIDE_ASPECT = 8;            // 클수록 가로로 납작
+export const GUIDE_ASPECT_STEP = 0.05;
 export const MAX_ROTATION_DEG = 15;          // 틀 회전 보정 범위 -15° ~ +15° (양수 = 시계 방향)
 export const ROTATION_STEP_DEG = 0.5;
 export const GUIDE_MAX_HEIGHT_RATIO = 0.9;   // 틀 높이는 영상 영역 높이의 90%를 넘지 않게
@@ -74,14 +79,17 @@ export const TESSERACT_CORE_PATH = 'https://cdn.jsdelivr.net/npm/tesseract.js-co
 export const TESSERACT_LANG_PATH = 'https://cdn.jsdelivr.net/gh/Shreeshrii/tessdata_ssd@e493a10a4bf81632506cf24ba99d83854afff9f6';
 export const OCR_LANG = 'ssd_int';
 export const OCR_LANG_GZIP = false;      // 위 저장소의 파일은 .traineddata (gzip 아님)
-export const OCR_WHITELIST = '0123456789';
+export const OCR_WHITELIST = '0123456789.';
 export const OCR_PSM_SINGLE_LINE = '7';  // Tesseract 페이지 분할 모드: 한 줄
 export const OCR_MIN_CONFIDENCE = 0.4;   // 이보다 낮으면 숫자를 읽었어도 판독 실패로 처리
 export const OCR_INIT_TIMEOUT_MS = 90000;      // 엔진 준비(파일 내려받기 포함) 제한 시간
 export const OCR_RECOGNIZE_TIMEOUT_MS = 20000; // 한 번 인식 제한 시간 (넘으면 엔진을 다시 준비)
-// OCR 입력 이미지 전처리
-export const OCR_PREPROCESS_OPTIONS = ['auto', 'red', 'gray', 'contrast']; // 자동 | 빨간 LED 강조 이진화 | 흑백 이진화 | 대비 조정 원본
+// OCR 입력 이미지 전처리. auto는 아래 후보를 비교해 안정되면 가마에 고정
+export const OCR_VARIANTS = ['red', 'lcd', 'gray', 'bin', 'binInv'];
+export const OCR_PREPROCESS_OPTIONS = ['auto'].concat(OCR_VARIANTS);
 export const DEFAULT_OCR_PREPROCESS = 'auto';
+export const OCR_STABLE_READS = 2;     // 같은 전처리가 같은 숫자를 이만큼 연속으로 읽으면 그 방식을 유지
+export const OCR_RESEEK_FAILS = 3;     // 유지 중인 전처리가 이만큼 연속 실패하면 다시 탐색
 // OCR 입력 숫자 높이. 작은 ROI는 확대, 큰 ROI는 축소해 이 높이로 맞춤
 // (합성 7세그먼트 시험에서 48~64px가 가장 잘 읽혔고, 3배 확대한 192px는 오히려 나빴음)
 export const OCR_TARGET_H = 64;

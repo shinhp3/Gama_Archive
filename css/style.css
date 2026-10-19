@@ -850,9 +850,22 @@ select { -webkit-appearance: none; appearance: none; padding-right: clamp(36px, 
 }
 .guide-label { 
   flex: none; 
-  min-width: clamp(40px, 5vw, 44px); 
+  min-width: clamp(52px, 8vw, 68px);
   font-weight: 600; 
   font-size: clamp(14px, 2.2vw, 16px);
+  white-space: nowrap;
+}
+.roi-hint {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: clamp(13px, 2vw, 15px);
+  line-height: 1.45;
+}
+.field-note {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: clamp(13px, 2vw, 14px);
+  line-height: 1.45;
 }
 .rotate-step { 
   flex: none; 
@@ -865,7 +878,7 @@ select { -webkit-appearance: none; appearance: none; padding-right: clamp(36px, 
 .debug-images canvas { display: block; max-width: 100%; height: auto; background: #000; border: 1px solid #ccc; }
 .zoom-value {
   flex: none;
-  min-width: clamp(46px, 6vw, 52px);
+  min-width: clamp(64px, 9vw, 76px);
   text-align: right;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
