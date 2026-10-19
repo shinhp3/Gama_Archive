@@ -1,8 +1,8 @@
 // ===== 소성 자동 기록 =====
 // 5초 판독 결과를 모아 1분마다 중앙값을 계산해 저장
 
-import { RECORD_INTERVAL_MS, MIN_VALID_SAMPLES } from './config.js?v=0.3.10';
-import * as db from './db.js?v=0.3.10';
+import { RECORD_INTERVAL_MS, MIN_VALID_SAMPLES } from './config.js?v=0.3.11';
+import * as db from './db.js?v=0.3.11';
 
 function makeId() {
   if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
@@ -20,6 +20,7 @@ export function createRecorder(deps) {
   let intervalTimer = null;    // 1분 타이머
   let readings = [];           // 현재 1분 구간의 판독 결과들
   let lastSaveTime = null;     // 마지막 저장 시각
+  const savedIntervals = {};   // firingId+구간 → 저장됨. 같은 1분 구간을 두 번 쓰지 않음
 
   // 현재 소성 상태
   function state() {
@@ -88,9 +89,11 @@ export function createRecorder(deps) {
 
   // 현재 구간 저장
   async function saveCurrentInterval() {
-    if (!currentFiring) return;
+    if (!currentFiring) return 'skip';
 
     const interval = getCurrentInterval(currentFiring.startedAt);
+    const slot = currentFiring.id + ':' + interval.index;
+    if (savedIntervals[slot]) return 'duplicate';
     
     // 온도 중앙값
     const temps = readings.map((r) => r.temp);
@@ -126,13 +129,16 @@ export function createRecorder(deps) {
       });
       
       console.log('[Recorder] 저장 완료');
+      savedIntervals[slot] = true;
       lastSaveTime = Date.now();
       
       // 다음 구간 준비
       readings = [];
+      return 'saved';
       
     } catch (err) {
       console.error('[Recorder] 온도 기록 저장 실패:', err);
+      if (deps.onSaveError) deps.onSaveError(err);
       throw err;
     }
   }
@@ -141,21 +147,31 @@ export function createRecorder(deps) {
   function startIntervalTimer() {
     if (!currentFiring) return;
     
-    const interval = getCurrentInterval(currentFiring.startedAt);
-    const delay = interval.end - Date.now();
-    
-    // 이미 구간이 지났으면 즉시 저장
-    if (delay <= 0) {
-      saveCurrentInterval()
-        .then(() => startIntervalTimer())
-        .catch((err) => console.error('구간 저장 실패:', err));
-      return;
+    if (intervalTimer) {
+      clearTimeout(intervalTimer);
+      intervalTimer = null;
     }
-    
+    const interval = getCurrentInterval(currentFiring.startedAt);
+    const delay = Math.max(0, interval.end - Date.now());
+
     intervalTimer = setTimeout(() => {
+      intervalTimer = null;
       saveCurrentInterval()
-        .then(() => startIntervalTimer())
-        .catch((err) => console.error('구간 저장 실패:', err));
+        .then((kind) => {
+          if (!currentFiring) return;
+          if (kind === 'duplicate') {
+            const again = getCurrentInterval(currentFiring.startedAt);
+            const wait = Math.max(1000, again.end - Date.now());
+            intervalTimer = setTimeout(() => startIntervalTimer(), wait);
+            return;
+          }
+          startIntervalTimer();
+        })
+        .catch((err) => {
+          console.error('구간 저장 실패:', err);
+          if (!currentFiring) return;
+          intervalTimer = setTimeout(() => startIntervalTimer(), 5000);
+        });
     }, delay);
   }
 

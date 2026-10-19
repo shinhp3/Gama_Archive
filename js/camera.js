@@ -1,7 +1,8 @@
 // ===== 카메라 =====
 // 후면 카메라 스트림 시작/중지, 영상 프레임에서 원하는 영역을 잘라내기
 
-import { CAMERA_IDEAL_W, CAMERA_IDEAL_H } from './config.js?v=0.3.10';
+import { CAMERA_IDEAL_W, CAMERA_IDEAL_H } from './config.js?v=0.3.11';
+import { markTiming } from './timings.js?v=0.3.11';
 
 const PERMISSION_ERRORS = ['NotAllowedError', 'PermissionDeniedError', 'SecurityError'];
 
@@ -11,7 +12,7 @@ function cameraErrorMessage(err) {
     case 'NotAllowedError':
     case 'PermissionDeniedError':
     case 'SecurityError':
-      return '카메라 권한이 거부되었습니다. 주소창 왼쪽의 "가가"(또는 "AA") 메뉴 → 웹 사이트 설정 → 카메라를 "허용"으로 바꾸거나, iPad 설정 → Safari → 카메라를 "허용"으로 바꾼 뒤 페이지를 새로고침하세요.';
+      return '카메라 권한이 거부되었습니다. 브라우저의 사이트 설정에서 카메라를 허용한 뒤 페이지를 새로고침하세요.';
     case 'NotFoundError':
     case 'DevicesNotFoundError':
       return '사용할 수 있는 카메라를 찾지 못했습니다.';
@@ -35,6 +36,9 @@ function cameraErrorMessage(err) {
 export function createCamera(els, hooks) {
   const { video, button, placeholder } = els;
   let stream = null;
+  let opening = false;
+  let openGen = 0;
+  let activeDeviceId = '';
 
   // 판독용 작업 캔버스 (화면에 붙이지 않음). getImageData를 자주 호출하므로 willReadFrequently 지정
   const workCanvas = document.createElement('canvas');
@@ -63,65 +67,39 @@ export function createCamera(els, hooks) {
     hooks.onEnded();
   }
 
-  // 반드시 버튼 클릭 이벤트 안에서만 호출 (iOS 제약)
-  function start() {
-    if (stream) return;
+  // 주 포인터가 거친(터치) 기기만 후면을 우선한다. 마우스·트랙패드가 주 포인터면 기본 웹캠.
+  function wantsRearCamera() {
+    if (!window.matchMedia) return false;
+    const coarse = window.matchMedia('(pointer: coarse)').matches;
+    const fineHover = window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+    return coarse && !fineHover;
+  }
 
-    if (window.isSecureContext === false) {
-      hooks.onMessage('카메라는 HTTPS 주소에서만 사용할 수 있습니다. GitHub Pages 주소(https://…)로 접속하세요.', 'error');
-      return;
+  function videoConstraints(deviceId, withSize) {
+    const videoCons = {};
+    if (deviceId) videoCons.deviceId = { exact: deviceId };
+    else if (wantsRearCamera()) videoCons.facingMode = { ideal: 'environment' };
+    if (withSize) {
+      videoCons.width = { ideal: CAMERA_IDEAL_W };
+      videoCons.height = { ideal: CAMERA_IDEAL_H };
     }
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      hooks.onMessage('이 브라우저에서는 카메라를 사용할 수 없습니다. iPad의 Safari 최신 버전에서 HTTPS 주소로 접속하세요.', 'error');
-      return;
-    }
+    return { audio: false, video: videoCons };
+  }
 
-    button.disabled = true;
-    hooks.onMessage('카메라를 여는 중…', 'info');
-
-    // 후면 카메라 우선, 고해상도 희망 (지원하지 않으면 기기가 가능한 값으로 맞춤)
-    const constraints = {
-      audio: false,
-      video: {
-        facingMode: { ideal: 'environment' },
-        width: { ideal: CAMERA_IDEAL_W },
-        height: { ideal: CAMERA_IDEAL_H }
-      }
-    };
-
-    navigator.mediaDevices.getUserMedia(constraints)
+  function requestStream(deviceId) {
+    return navigator.mediaDevices.getUserMedia(videoConstraints(deviceId, true))
       .catch((err) => {
-        // 권한 거부가 아니면 해상도 조건 없이 한 번 더 시도
         if (err && PERMISSION_ERRORS.indexOf(err.name) >= 0) throw err;
-        return navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' } } });
-      })
-      .then((s) => {
-        stream = s;
-        s.getVideoTracks().forEach((t) => {
-          t.addEventListener('ended', onTrackEnded);
-        });
-
-        // iOS는 속성뿐 아니라 프로퍼티로도 muted/playsInline을 지정해야 안정적으로 인라인 재생됨
-        video.muted = true;
-        video.playsInline = true;
-        video.setAttribute('playsinline', '');
-        video.setAttribute('webkit-playsinline', '');
-        video.srcObject = s;
-        safePlay();
-
-        placeholder.hidden = true;
-        setButton(true);
-        button.disabled = false;
-        hooks.onStarted();
+        return navigator.mediaDevices.getUserMedia(videoConstraints(deviceId, false));
       })
       .catch((err) => {
-        button.disabled = false;
-        setButton(false);
-        hooks.onMessage(cameraErrorMessage(err), 'error');
+        if (err && PERMISSION_ERRORS.indexOf(err.name) >= 0) throw err;
+        if (!deviceId) throw err;
+        return navigator.mediaDevices.getUserMedia(videoConstraints('', false));
       });
   }
 
-  function stop() {
+  function releaseStream() {
     if (stream) {
       stream.getTracks().forEach((t) => {
         t.removeEventListener('ended', onTrackEnded);
@@ -129,10 +107,99 @@ export function createCamera(els, hooks) {
       });
     }
     stream = null;
+    activeDeviceId = '';
     try { video.pause(); } catch (e) { /* 무시 */ }
     video.srcObject = null;
+  }
+
+  function listVideoInputs() {
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.enumerateDevices !== 'function') {
+      return Promise.resolve([]);
+    }
+    return navigator.mediaDevices.enumerateDevices()
+      .then((list) => (list || []).filter((d) => d.kind === 'videoinput' && d.deviceId))
+      .catch(() => []);
+  }
+
+  function publishDevices() {
+    if (!hooks.onDevices) return;
+    listVideoInputs().then((devices) => {
+      hooks.onDevices(devices, activeDeviceId);
+    });
+  }
+
+  function attachStream(s) {
+    stream = s;
+    s.getVideoTracks().forEach((t) => {
+      t.addEventListener('ended', onTrackEnded);
+    });
+    const settings = trackSettings();
+    activeDeviceId = settings && settings.deviceId ? settings.deviceId : '';
+    const sizeNote = (settings && settings.width) ? (settings.width + 'x' + settings.height) : '';
+    markTiming('cameraStarted', sizeNote);
+
+    video.muted = true;
+    video.playsInline = true;
+    video.setAttribute('playsinline', '');
+    video.setAttribute('webkit-playsinline', '');
+    video.srcObject = s;
+    safePlay();
+
+    placeholder.hidden = true;
+    setButton(true);
+    button.disabled = false;
+    publishDevices();
+    hooks.onStarted();
+  }
+
+  // 버튼 클릭 또는 카메라 목록 변경에서 호출. deviceId가 있으면 그 장치로 연다.
+  function start(deviceId) {
+    const nextId = deviceId || '';
+    if (stream && nextId && nextId === activeDeviceId) return;
+    if (opening) return;
+
+    if (window.isSecureContext === false) {
+      hooks.onMessage('카메라는 HTTPS 주소에서만 사용할 수 있습니다.', 'error');
+      return;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      hooks.onMessage('이 브라우저는 카메라 API(getUserMedia)를 지원하지 않습니다. HTTPS 주소의 최신 브라우저에서 여세요.', 'error');
+      return;
+    }
+
+    const gen = ++openGen;
+    opening = true;
+    button.disabled = true;
+    hooks.onMessage('카메라를 여는 중…', 'info');
+    markTiming('cameraRequest');
+    releaseStream();
+
+    requestStream(nextId)
+      .then((s) => {
+        if (gen !== openGen) {
+          s.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        opening = false;
+        attachStream(s);
+      })
+      .catch((err) => {
+        if (gen !== openGen) return;
+        opening = false;
+        button.disabled = false;
+        setButton(false);
+        placeholder.hidden = false;
+        hooks.onMessage(cameraErrorMessage(err), 'error');
+      });
+  }
+
+  function stop() {
+    openGen++;
+    opening = false;
+    releaseStream();
     placeholder.hidden = false;
     setButton(false);
+    button.disabled = false;
   }
 
   function isRunning() {
@@ -197,5 +264,8 @@ export function createCamera(els, hooks) {
     }
   }
 
-  return { start, stop, isRunning, videoSize, trackSettings, isFrameReady, resumeIfPaused, drawRegion, grabRegion };
+  return {
+    start, stop, isRunning, videoSize, trackSettings, isFrameReady, resumeIfPaused, drawRegion, grabRegion,
+    currentDeviceId: () => activeDeviceId
+  };
 }

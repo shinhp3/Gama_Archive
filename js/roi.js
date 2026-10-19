@@ -8,7 +8,7 @@ import {
   DEFAULT_GUIDE_ASPECT, MIN_GUIDE_ASPECT, MAX_GUIDE_ASPECT, GUIDE_ASPECT_STEP,
   MAX_ROTATION_DEG, ROTATION_STEP_DEG,
   GUIDE_MAX_HEIGHT_RATIO, MIN_ZOOM, MAX_ZOOM, ZOOM_STEP
-} from './config.js?v=0.3.10';
+} from './config.js?v=0.3.11';
 
 function clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
 function round3(v) { return Math.round(v * 1000) / 1000; }
@@ -81,6 +81,18 @@ export function roiSourceRegion(roi, rotationDeg, vw, vh) {
     h: clamp(Math.ceil(Math.max.apply(null, ys)) + 1, by + 1, vh) - by
   };
   return { x: cx - w / 2, y: cy - h / 2, w, h, angle, cx, cy, corners, bounds };
+}
+
+// 카메라 원본 크기가 바뀌었을 때 비율 좌표를 그대로 쓸 수 있는지.
+// 'same': 종횡비가 비슷함. 'swapped': 가로·세로가 뒤집힌 정도. 'unknown': 변환을 단정할 수 없음.
+export function frameAspectRelation(prev, next) {
+  if (!prev || !next || !(prev.w > 0) || !(prev.h > 0) || !(next.w > 0) || !(next.h > 0)) return 'same';
+  const r1 = prev.w / prev.h;
+  const r2 = next.w / next.h;
+  if (Math.abs(r1 - r2) / Math.max(r1, r2) < 0.08) return 'same';
+  const swapped = next.h / next.w;
+  if (Math.abs(r1 - swapped) / Math.max(r1, swapped) < 0.08) return 'swapped';
+  return 'unknown';
 }
 
 // 가마 설정으로 판독 영역 계산

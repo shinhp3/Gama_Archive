@@ -1,21 +1,21 @@
 // ===== 진입점 =====
 // 화면 요소를 찾아 각 모듈을 연결하고, 탭 전환과 이벤트 처리를 담당
 
-import { APP_VERSION, PREVIEW_INTERVAL_MS, LIVE_READ_MS, CAMERA_IDEAL_W, CAMERA_IDEAL_H, OCR_LOCK_REVISION } from './config.js?v=0.3.10';
-import { initDb } from './db.js?v=0.3.10';
-import { createCamera } from './camera.js?v=0.3.10';
-import { createRoiEditor, kilnSourceRegion } from './roi.js?v=0.3.10';
-import { createKilnManager } from './kilns.js?v=0.3.10';
-import { createReader, createLiveDisplay, recognitionMode } from './reading.js?v=0.3.10';
-import { createOcrEngine } from './ocr.js?v=0.3.10';
-import { createOcrPreprocessor } from './ocrPreprocess.js?v=0.3.10';
-import { createCalibrationPanel } from './calibration.js?v=0.3.10';
-import { segmentQuads } from './recognizer.js?v=0.3.10';
-import { createRecorder } from './recorder.js?v=0.3.10';
-import { createHistoryView } from './history.js?v=0.3.10';
+import { APP_VERSION, PREVIEW_INTERVAL_MS, LIVE_READ_MS, CAMERA_IDEAL_W, CAMERA_IDEAL_H, OCR_LOCK_REVISION } from './config.js?v=0.3.11';
+import { initDb } from './db.js?v=0.3.11';
+import { createCamera } from './camera.js?v=0.3.11';
+import { createRoiEditor, kilnSourceRegion, frameAspectRelation } from './roi.js?v=0.3.11';
+import { markTiming, timingText } from './timings.js?v=0.3.11';
+import { createKilnManager } from './kilns.js?v=0.3.11';
+import { createReader, createLiveDisplay, recognitionMode } from './reading.js?v=0.3.11';
+import { createOcrEngine } from './ocr.js?v=0.3.11';
+import { createOcrPreprocessor } from './ocrPreprocess.js?v=0.3.11';
+import { createCalibrationPanel } from './calibration.js?v=0.3.11';
+import { segmentQuads } from './recognizer.js?v=0.3.11';
+import { createRecorder } from './recorder.js?v=0.3.11';
+import { createHistoryView } from './history.js?v=0.3.11';
 
 const TABS = ['record', 'history'];
-const ROI_RESET_MESSAGE = '화면 방향이 바뀌어 영역이 초기화되었습니다. 영역 버튼을 눌러 온도 숫자 전체가 노란 네모 안에 들어오도록 다시 맞춰 주세요.';
 
 // 주소에 ?debug=1 을 붙이면 카메라 해상도와 확대/영역 값을 영상 아래에 표시
 function isDebugMode() {
@@ -24,14 +24,6 @@ function isDebugMode() {
   } catch (e) {
     return false;
   }
-}
-
-// 기기 화면 방향. iPad Split View처럼 창 크기만 바뀌는 경우와 구분하려고 기기 방향 정보를 먼저 사용
-function screenOrientation() {
-  const so = window.screen && window.screen.orientation;
-  if (so && typeof so.type === 'string') return so.type.indexOf('portrait') === 0 ? 'portrait' : 'landscape';
-  if (typeof window.orientation === 'number') return Math.abs(window.orientation) === 90 ? 'landscape' : 'portrait';
-  return window.innerWidth >= window.innerHeight ? 'landscape' : 'portrait';
 }
 
 function getElements() {
@@ -55,6 +47,8 @@ function getElements() {
     deleteFiringBtn: $('deleteFiringBtn'),
     roiEditBtn: $('roiEditBtn'),
     cameraBtn: $('cameraBtn'),
+    cameraField: $('cameraField'),
+    cameraSelect: $('cameraSelect'),
     videoWrap: $('videoWrap'),
     video: $('video'),
     overlay: $('overlay'),
@@ -96,6 +90,7 @@ function getElements() {
     digitsSelect: $('digitsSelect'),
     intervalSelect: $('intervalSelect'),
     liveTemp: $('liveTemp'),
+    confirmedTemp: $('confirmedTemp'),
     liveConf: $('liveConf'),
     liveReason: $('liveReason'),
     liveEngine: $('liveEngine'),
@@ -128,6 +123,9 @@ function getElements() {
       ocrValue: $('ocrValue'),
       ocrConf: $('ocrConf'),
       ocrTime: $('ocrTime'),
+      ocrTiming: $('ocrTiming'),
+      ocrModel: $('ocrModel'),
+      ocrRoi: $('ocrRoi'),
       ocrVariant: $('ocrVariant'),
       ocrAttempts: $('ocrAttempts'),
       ocrImages: $('ocrImages'),
@@ -189,7 +187,8 @@ function startApp() {
     {
       onMessage: showMessage,
       onStarted: handleCameraStarted,
-      onEnded: handleCameraEnded
+      onEnded: handleCameraEnded,
+      onDevices: renderCameraList
     }
   );
 
@@ -265,7 +264,8 @@ function startApp() {
   const recorder = createRecorder({
     getKiln: () => kilns.current(),
     camera,
-    onStateChange: updateFiringState
+    onStateChange: updateFiringState,
+    onSaveError: () => showMessage('1분 온도를 저장하지 못했습니다. 같은 구간을 잠시 뒤 다시 저장합니다.', 'error')
   });
 
   function updateFiringState(state) {
@@ -276,7 +276,7 @@ function startApp() {
     els.firingActive.hidden = !isActive;
     
     // 상태 표시
-    els.recordState.textContent = isActive ? '기록 중' : '대기';
+    els.recordState.textContent = !isActive ? '대기' : (camera.isRunning() ? '기록 중' : '카메라 중단');
     
     if (isActive) {
       // 시작 시각
@@ -378,7 +378,12 @@ function startApp() {
     } else {
       lines.push('영역 지정 안 됨');
     }
+    lines.push(timingText());
     els.debugInfo.textContent = lines.join('\n');
+  }
+
+  function updateTimingView() {
+    if (els.calib.ocrTiming) els.calib.ocrTiming.textContent = timingText();
   }
 
   function refreshCameraView() {
@@ -397,6 +402,11 @@ function startApp() {
     const k = kilns.current();
     live.show(res);
     calib.show(res);
+    if (els.calib.ocrModel) els.calib.ocrModel.textContent = res.model || '—';
+    if (els.calib.ocrRoi && res.roiSource) {
+      els.calib.ocrRoi.textContent = res.roiSource.w + '×' + res.roiSource.h + 'px · 숫자 높이 ' + res.roiSource.contentH + 'px';
+    }
+    updateTimingView();
     
     // 소성 기록 중이면 recorder에 전달
     recorder.addReading(res);
@@ -432,32 +442,48 @@ function startApp() {
     }
   }
 
-  // 카메라 영상 프레임 방향 (영상이 없으면 null). iPad는 회전하면 프레임 가로·세로도 바뀜
-  function frameOrientation() {
-    if (!camera.isFrameReady()) return null;
+  // 창 크기·주소창·Split View는 저장한 ROI를 건드리지 않는다.
+  // 카메라 원본 크기가 실제로 바뀌면 비율 좌표로 다시 맞추고, 종횡비를 변환할 수 없을 때만 확인을 요청한다.
+  let lastFrameSize = null;
+  function noteFrameSize() {
+    if (!camera.isFrameReady()) return;
     const size = camera.videoSize();
-    return size.width >= size.height ? 'landscape' : 'portrait';
-  }
-
-  // 화면이 자동 회전으로 가로↔세로 바뀌면 지정해 둔 영역을 초기화하고 다시 지정하라고 안내
-  // 화면 방향 또는 영상 프레임 방향 중 하나라도 바뀌면 회전으로 봄
-  let lastScreen = screenOrientation();
-  let lastFrame = frameOrientation();
-  function checkOrientation() {
-    const screenNow = screenOrientation();
-    const frameNow = frameOrientation();
-    const rotated = screenNow !== lastScreen || (frameNow && lastFrame && frameNow !== lastFrame);
-    lastScreen = screenNow;
-    if (frameNow) lastFrame = frameNow;
-    if (!rotated) return;
-    roi.cancelGesture();
+    const next = { w: size.width, h: size.height };
+    if (!lastFrameSize) {
+      lastFrameSize = next;
+      markTiming('videoSize', next.w + 'x' + next.h);
+      return;
+    }
+    if (next.w === lastFrameSize.w && next.h === lastFrameSize.h) return;
+    const prev = lastFrameSize;
+    lastFrameSize = next;
+    const relation = frameAspectRelation(prev, next);
     reader.invalidate();
-    setRoiEditing(false);
-    reader.clearSearch();
-    if (kilns.clearAllRois()) {
-      showMessage(ROI_RESET_MESSAGE, 'error');
+    if (relation === 'unknown') {
+      showMessage('카메라 원본 비율이 바뀌었습니다. 노란 네모가 숫자와 맞는지 영역 버튼으로 확인하세요. 저장된 영역은 지우지 않았습니다.', 'error');
     }
     refreshCameraView();
+  }
+
+  let fillingCameras = false;
+  function renderCameraList(devices, activeId) {
+    const usable = (devices || []).filter((d) => d && d.deviceId);
+    if (!els.cameraField || !els.cameraSelect) return;
+    if (usable.length < 2) {
+      els.cameraField.hidden = true;
+      return;
+    }
+    fillingCameras = true;
+    els.cameraSelect.textContent = '';
+    usable.forEach((d, i) => {
+      const opt = document.createElement('option');
+      opt.value = d.deviceId;
+      opt.textContent = d.label || ('카메라 ' + (i + 1));
+      els.cameraSelect.appendChild(opt);
+    });
+    if (activeId && usable.some((d) => d.deviceId === activeId)) els.cameraSelect.value = activeId;
+    els.cameraField.hidden = false;
+    fillingCameras = false;
   }
 
   // ===== 기록 보기 =====
@@ -566,6 +592,8 @@ function startApp() {
       hideMessage();
     }
     reader.invalidate(); // 카메라를 다시 켜면 판독 주기를 기다리지 않고 영상 크기가 확정되는 대로 판독
+    if (recognitionMode(kilns.current()) === 'ocr') ocr.init();
+    updateFiringState(recorder.state());
     roi.scheduleDraw();
   }
 
@@ -580,6 +608,7 @@ function startApp() {
 
   function handleCameraEnded() {
     stopCamera();
+    if (recorder.isActive()) updateFiringState(recorder.state());
     showMessage('카메라 연결이 끊어졌습니다. "카메라 시작"을 다시 눌러주세요.', 'error');
   }
 
@@ -594,10 +623,18 @@ function startApp() {
       if (camera.isRunning()) {
         stopCamera();
         hideMessage();
+        if (recorder.isActive()) updateFiringState(recorder.state());
       } else {
         camera.start();
       }
     });
+
+    if (els.cameraSelect) {
+      els.cameraSelect.addEventListener('change', () => {
+        if (fillingCameras) return;
+        camera.start(els.cameraSelect.value);
+      });
+    }
 
     // 영역 지정(영상 확대/이동) 모드 켜기/끄기
     els.roiEditBtn.addEventListener('click', () => setRoiEditing(!roi.isEditable()));
@@ -636,17 +673,17 @@ function startApp() {
     // 영상 크기 정보가 준비되거나 바뀌면(회전 시 프레임 가로·세로가 바뀜) 방향 확인 후 다시 그림
     ['loadedmetadata', 'playing', 'resize'].forEach((ev) => {
       els.video.addEventListener(ev, () => {
-        checkOrientation();
+        noteFrameSize();
         refreshCameraView();
       });
     });
 
-    // 화면 크기/회전 변화 대응 (iOS는 회전 직후 크기·방향 값이 늦게 반영되므로 한 번 더 확인)
+    // 창 크기와 회전은 영상만 다시 그린다. ROI는 카메라 원본 크기가 바뀔 때만 noteFrameSize가 본다.
     const onLayoutChange = () => {
-      checkOrientation();
+      noteFrameSize();
       roi.scheduleDraw();
       setTimeout(() => {
-        checkOrientation();
+        noteFrameSize();
         roi.scheduleDraw();
       }, 300);
     };
@@ -670,7 +707,7 @@ function startApp() {
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) return;
       camera.resumeIfPaused();
-      checkOrientation(); // 다른 앱에 있는 동안 회전했을 수 있음
+      noteFrameSize();
     });
 
     // 페이지를 떠날 때 OCR 작업자 종료 (뒤로 가기로 돌아오면 필요할 때 다시 준비)
@@ -704,7 +741,8 @@ function startApp() {
 
   // 1초마다 영역 확대 미리보기 갱신 및 소성 경과 시간 갱신
   setInterval(() => {
-    checkOrientation();
+    noteFrameSize();
+    updateTimingView();
     roi.updatePreview();
     updateDebug();
     if (recorder.isActive()) {

@@ -1,7 +1,7 @@
 // ===== 7세그먼트 판독기 =====
 // DOM에 의존하지 않는 순수 함수 모음. ImageData(또는 같은 모양의 { width, height, data } 객체)를 받아 판독 결과를 반환
 
-import { SEGMENTS, PATTERN_TO_DIGIT } from './config.js?v=0.3.10';
+import { SEGMENTS, PATTERN_TO_DIGIT } from './config.js?v=0.3.11';
 
 function clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
 

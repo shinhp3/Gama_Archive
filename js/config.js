@@ -1,6 +1,6 @@
 // ===== 앱 전체에서 쓰는 상수 =====
 
-export const APP_VERSION = 'v0.3.10';
+export const APP_VERSION = 'v0.3.11';
 
 // ===== 저장소 =====
 export const DB_NAME = 'kiln-recorder';
@@ -83,7 +83,7 @@ export const OCR_WHITELIST = '0123456789.';
 export const OCR_PSM_SINGLE_LINE = '7';  // Tesseract 페이지 분할 모드: 한 줄
 export const OCR_MIN_CONFIDENCE = 0.4;   // 이보다 낮으면 숫자를 읽었어도 판독 실패로 처리
 export const OCR_MIN_CHAR_CONFIDENCE = 0.3; // 한 자리가 이보다 낮으면 비슷한 숫자로 확정하지 않음
-export const OCR_LOCK_REVISION = 2;    // 전처리 방식이 바뀌면 예전 고정값을 버리고 다시 탐색
+export const OCR_LOCK_REVISION = 3;    // 잠금 규칙이 바뀌면 예전 고정값을 버리고 다시 탐색
 export const OCR_INIT_TIMEOUT_MS = 90000;      // 엔진 준비(파일 내려받기 포함) 제한 시간
 export const OCR_RECOGNIZE_TIMEOUT_MS = 20000; // 한 번 인식 제한 시간 (넘으면 엔진을 다시 준비)
 // OCR 입력 이미지 전처리. auto는 아래 후보를 비교해 안정되면 가마에 고정
@@ -96,6 +96,8 @@ export const OCR_RESEEK_FAILS = 3;     // 유지 중인 전처리가 이만큼 �
 // (합성 7세그먼트 시험에서 48~64px가 가장 잘 읽혔고, 3배 확대한 192px는 오히려 나빴음)
 export const OCR_TARGET_H = 64;
 export const OCR_GRAB_MAX_H = 480;     // ROI를 이 높이 이하로만 줄인 뒤, 빈 여백을 빼고 숫자 높이를 OCR_TARGET_H에 맞춤
+export const OCR_MIN_CONTENT_H = 24;   // 원본 프레임에서 숫자 높이가 이보다 낮으면 품질 경고
+export const OCR_FRAGMENT_WIDTH = 0.28; // 잘라 낸 잉크 폭이 ROI 폭의 이 비율보다 좁으면 조각으로 보고 전체를 유지
 export const OCR_PAD_RATIO = 0.25;     // 상하좌우 흰 여백 (OCR 입력 높이 대비)
 export const OCR_CLOSE_RATIO = 0.02;   // 세그먼트 사이 틈 메우기 반경 (OCR 입력 높이 대비)
 export const OCR_THICKEN_RATIO = 1 / 64; // 이진화 후 획 굵히기 반경 (64px에서 1px)

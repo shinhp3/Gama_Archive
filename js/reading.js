@@ -3,13 +3,14 @@
 // OCR은 오래 걸리므로 한 번에 하나만 실행하고, 가마·설정이 바뀌거나 카메라가 꺼진 뒤 늦게 끝난 결과는 버림
 
 import {
-  READ_MAX_W, CONF_HIGH, CONF_LOW, FRAME_SETTLE_MS, OCR_STABLE_READS
-} from './config.js?v=0.3.10';
-import { createValidatorState, validateReading } from './temperature-validator.js?v=0.3.10';
-import { kilnSourceRegion, frameBlockReason } from './roi.js?v=0.3.10';
-import { recognize } from './recognizer.js?v=0.3.10';
-import { judgeOcr, formatTemp } from './ocr.js?v=0.3.10';
-import { variantOrder, advanceVariantLock, VARIANT_LABELS } from './ocrPreprocess.js?v=0.3.10';
+  READ_MAX_W, CONF_HIGH, CONF_LOW, FRAME_SETTLE_MS, OCR_STABLE_READS, OCR_LANG
+} from './config.js?v=0.3.11';
+import { markTiming } from './timings.js?v=0.3.11';
+import { createValidatorState, validateReading } from './temperature-validator.js?v=0.3.11';
+import { kilnSourceRegion, frameBlockReason } from './roi.js?v=0.3.11';
+import { recognize } from './recognizer.js?v=0.3.11';
+import { judgeOcr, formatTemp } from './ocr.js?v=0.3.11';
+import { variantOrder, advanceVariantLock, VARIANT_LABELS } from './ocrPreprocess.js?v=0.3.11';
 
 export const ENGINE_LABELS = { ocr: 'OCR', sevenSegment: '7세그먼트' };
 
@@ -125,7 +126,9 @@ export function createReader(deps) {
       settleKey = key;
       settleAt = Date.now();
     }
-    return Date.now() - settleAt >= FRAME_SETTLE_MS;
+    const settled = Date.now() - settleAt >= FRAME_SETTLE_MS;
+    if (settled && size.width > 0) markTiming('videoSizeStable', size.width + 'x' + size.height);
+    return settled;
   }
 
   function readSevenSegment(k) {
@@ -211,7 +214,13 @@ export function createReader(deps) {
             result = hit || result;
             result.preprocessState = 'manual';
           } else {
-            const decision = advanceVariantLock(searchState(kilnId), attempts, lockedVariant);
+            const decision = advanceVariantLock(searchState(kilnId), attempts, lockedVariant, {
+              blockLock: (text) => {
+                const digits = String(text || '').replace('.', '');
+                if (frame.lowQuality) return true;
+                return !!(frame.keptFull && digits.length <= 1);
+              }
+            });
             searches.set(kilnId, decision.state);
             const picked = judged.filter((j) => j.variant === decision.variant && (decision.action === 'use' || decision.action === 'lock' ? j.ok : true))[0] || result;
             result = picked;
@@ -225,7 +234,12 @@ export function createReader(deps) {
               const why = result.reason || '숫자를 찾지 못했습니다.';
               holdForSearch(result, why + ' 인식이 여러 번 실패해 전처리를 다시 찾습니다.', 'reseek');
             } else if (decision.action === 'conflict') {
-              holdForSearch(result, '전처리마다 다른 숫자가 나옵니다. 현재 온도 숫자만 네모 안에 있는지 확인하세요.', 'conflict');
+              const whyConflict = decision.blocked
+                ? (frame.lowQuality
+                  ? '숫자 높이가 너무 낮습니다. 확정하지 않습니다. 숫자를 네모 안에 더 크게 맞추세요.'
+                  : '넓은 영역에서 한 자리만 반복됩니다. 이 값을 온도로 확정하지 않습니다. 숫자 전체가 네모 안에 있는지 확인하세요.')
+                : '전처리마다 다른 숫자가 나옵니다. 현재 온도 숫자만 네모 안에 있는지 확인하세요.';
+              holdForSearch(result, whyConflict, 'conflict');
             } else if (decision.action === 'fail') {
               result.preprocessState = 'locked';
             } else {
@@ -242,6 +256,21 @@ export function createReader(deps) {
           }
         }
       }
+      if (result && frame) {
+        result.model = OCR_LANG;
+        result.roiSource = {
+          w: Math.round(frame.sourceW),
+          h: Math.round(frame.sourceH),
+          contentH: Math.round(frame.contentH)
+        };
+        result.lowQuality = !!frame.lowQuality;
+        if (frame.lowQuality && (!result.reason || result.reason.indexOf('숫자 높이가') < 0)) {
+          const note = '숫자 높이가 ' + Math.round(frame.contentH) + 'px로 낮습니다. 숫자를 더 크게 맞추세요.';
+          result.reason = result.reason ? (note + ' ' + result.reason) : note;
+        }
+      }
+      if (attempts.length) markTiming('firstSearchDone', attempts.length + ' variants');
+      if (result && result.ok) markTiming('firstValidParse', result.text || '');
     } catch (err) {
       result = statusResult('ocr', 'error', '인식 중 오류가 발생했습니다.' + (err && err.message ? ' (' + err.message + ')' : ''));
     }
@@ -256,7 +285,12 @@ export function createReader(deps) {
       result.elapsedMs = Math.round(now() - t0);
       result.attempts = attempts;
       result.source = source;
-      publish(validate(result, kilnId, lastStartAt));
+      const published = validate(result, kilnId, lastStartAt);
+      const vv = published.validation;
+      if (vv && vv.status === 'normal' && typeof vv.validatedTemp === 'number') {
+        markTiming('validatorBaseline', String(vv.validatedTemp));
+      }
+      publish(published);
     }
     deps.onActivity();
   }
@@ -329,24 +363,30 @@ export function createReader(deps) {
 export function validationLabel(v) {
   if (!v) return '—';
   if (v.status === 'suspect') return v.persistent ? '급변 경고' : '확인 중';
-  if (v.status === 'normal') return '정상';
-  if (v.status === 'initializing') return '기준 확인 중';
+  if (v.status === 'normal') return '시간 검증 통과';
+  if (v.status === 'initializing') return '확인 중';
   return '판독 실패';
 }
 
 /**
  * 기록 화면의 현재 인식값 표시
  * @param {{ liveTemp: HTMLElement, liveConf: HTMLElement, liveReason: HTMLElement,
- *   liveEngine: HTMLElement, liveState: HTMLElement, liveValid: HTMLElement, validResetBtn: HTMLElement }} els
+ *   liveEngine: HTMLElement, liveState: HTMLElement, liveValid: HTMLElement, validResetBtn: HTMLElement,
+ *   confirmedTemp: HTMLElement }} els
  */
 export function createLiveDisplay(els) {
-  // 현재 인식값은 시간 변화 검증을 통과한 온도만 표시 (실패·확인 중이면 이전 값을 남기지 않고 비움)
+  // OCR이 읽은 값과, 시간 검증을 통과한 온도를 따로 표시한다.
   function show(res) {
     const v = res && res.validation;
-    const temp = v ? v.validatedTemp : null;
-    const ok = typeof temp === 'number';
-    els.liveTemp.textContent = ok ? formatTemp(temp) : '—';
-    els.liveTemp.classList.toggle('is-empty', !ok);
+    const raw = (res && typeof res.temp === 'number') ? res.temp
+      : (res && typeof res.candidate === 'number' ? res.candidate : null);
+    els.liveTemp.textContent = raw == null ? '—' : formatTemp(raw);
+    els.liveTemp.classList.toggle('is-empty', raw == null);
+    const confirmed = v && v.status === 'normal' && typeof v.validatedTemp === 'number' ? v.validatedTemp : null;
+    if (els.confirmedTemp) {
+      els.confirmedTemp.textContent = confirmed == null ? '—' : formatTemp(confirmed);
+      els.confirmedTemp.classList.toggle('is-empty', confirmed == null);
+    }
 
     // 검증 상태 (OCR 신뢰도와 별개)
     els.liveValid.textContent = validationLabel(v);
@@ -369,6 +409,7 @@ export function createLiveDisplay(els) {
     else if (v.warning) why = v.warning;
     else if (v.status === 'unavailable') why = res.reason || v.reason;
     else if (v.status === 'initializing') why = v.reason;
+    else if (res && res.lowQuality && res.reason) why = res.reason;
     els.liveReason.textContent = why;
     els.liveReason.classList.toggle('is-warning', !!(v && v.warning));
   }

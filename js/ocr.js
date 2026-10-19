@@ -6,7 +6,8 @@ import {
   TESSERACT_WORKER_PATH, TESSERACT_CORE_PATH, TESSERACT_LANG_PATH, OCR_LANG, OCR_LANG_GZIP, OCR_WHITELIST,
   OCR_PSM_SINGLE_LINE, OCR_MIN_CONFIDENCE, OCR_MIN_CHAR_CONFIDENCE, OCR_INIT_TIMEOUT_MS, OCR_RECOGNIZE_TIMEOUT_MS,
   TEMP_MIN, TEMP_MAX
-} from './config.js?v=0.3.10';
+} from './config.js?v=0.3.11';
+import { markTiming } from './timings.js?v=0.3.11';
 
 const OEM_LSTM_ONLY = 1;
 const LIBRARY_WAIT_MS = 20000;
@@ -269,6 +270,7 @@ export function createOcrEngine(hooks) {
     if (state === 'loading' || state === 'ready') return;
     const gen = ++generation;
     setState('loading');
+    markTiming('workerInitStart');
     waitForLibrary().then((T) => {
       if (gen !== generation) return;
       if (!T) {
@@ -285,7 +287,11 @@ export function createOcrEngine(hooks) {
       const started = Date.now();
       (function check() {
         const T = window.Tesseract;
-        if (T && typeof T.createWorker === 'function') { resolve(T); return; }
+        if (T && typeof T.createWorker === 'function') {
+          markTiming('libraryReady');
+          resolve(T);
+          return;
+        }
         if (Date.now() - started > LIBRARY_WAIT_MS) { resolve(null); return; }
         setTimeout(check, 200);
       })();
@@ -316,6 +322,7 @@ export function createOcrEngine(hooks) {
     withTimeout(created, OCR_INIT_TIMEOUT_MS, '준비 시간이 너무 오래 걸립니다', (late) => { late.terminate(); })
       .then((w) => {
         made = w;
+        markTiming('langLoaded', OCR_LANG);
         return w.setParameters({
           tessedit_char_whitelist: OCR_WHITELIST,
           tessedit_pageseg_mode: OCR_PSM_SINGLE_LINE,
@@ -328,6 +335,7 @@ export function createOcrEngine(hooks) {
       .then(() => {
         if (gen !== generation) { made.terminate(); return; }
         worker = made;
+        markTiming('workerReady', OCR_LANG);
         setState('ready');
       })
       .catch((err) => {
@@ -344,8 +352,10 @@ export function createOcrEngine(hooks) {
   function recognize(canvas) {
     if (state !== 'ready' || !worker) return Promise.reject(new Error('숫자 인식 엔진이 준비되지 않았습니다.'));
     const w = worker;
+    markTiming('firstRecognizeStart');
     return withTimeout(w.recognize(canvas), OCR_RECOGNIZE_TIMEOUT_MS, 'timeout')
       .then((res) => {
+        markTiming('firstRecognizeEnd');
         const data = (res && res.data) || {};
         const words = Array.isArray(data.words) ? data.words.map((w) => ({
           text: typeof w.text === 'string' ? w.text : '',

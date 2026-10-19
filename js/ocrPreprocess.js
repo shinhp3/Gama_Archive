@@ -4,10 +4,10 @@
 
 import {
   OCR_TARGET_H, OCR_GRAB_MAX_H, OCR_PAD_RATIO, OCR_CLOSE_RATIO, OCR_THICKEN_RATIO, OCR_SATURATED_R, OCR_SATURATED_GB,
-  OCR_VARIANTS, OCR_STABLE_READS, OCR_RESEEK_FAILS
-} from './config.js?v=0.3.10';
-import { otsuThreshold } from './recognizer.js?v=0.3.10';
-import { kilnSourceRegion } from './roi.js?v=0.3.10';
+  OCR_VARIANTS, OCR_STABLE_READS, OCR_RESEEK_FAILS, OCR_MIN_CONTENT_H, OCR_FRAGMENT_WIDTH
+} from './config.js?v=0.3.11';
+import { otsuThreshold } from './recognizer.js?v=0.3.11';
+import { kilnSourceRegion } from './roi.js?v=0.3.11';
 
 // 전처리 방식 이름 (판독 보정 화면 표시용)
 export const VARIANT_LABELS = {
@@ -42,9 +42,11 @@ export function variantOrder(kiln, lockedVariant) {
  * @param {{ pending: Object, failStreak: number }|null} prev
  * @param {Array<{ variant: string, ok: boolean, text: string, confidence: number }>} attempts
  * @param {string|null} lockedVariant 이미 유지 중인 방식. 없으면 탐색
- * @returns {{ state: { pending: Object, failStreak: number }, action: string, variant: string|null, text: string, count: number }}
+ * @param {{ blockLock?: function(string): boolean }|null} [options]
+ *   blockLock(text)가 참이면 그 문자열을 전처리 고정값으로 저장하지 않고 확인 필요로 둔다.
+ * @returns {{ state: { pending: Object, failStreak: number }, action: string, variant: string|null, text: string, count: number, blocked?: boolean }}
  */
-export function advanceVariantLock(prev, attempts, lockedVariant) {
+export function advanceVariantLock(prev, attempts, lockedVariant, options) {
   const pending = {};
   const prevPending = (prev && prev.pending) || {};
   Object.keys(prevPending).forEach((key) => { pending[key] = prevPending[key]; });
@@ -61,6 +63,13 @@ export function advanceVariantLock(prev, attempts, lockedVariant) {
       return { state: { pending: {}, failStreak: 0 }, action: 'reseek', variant: null, text: '', count: 0 };
     }
     return { state: { pending, failStreak }, action: 'fail', variant: lockedVariant, text: '', count: 0 };
+  }
+
+  const texts = [];
+  oks.forEach((a) => { if (texts.indexOf(a.text) < 0) texts.push(a.text); });
+  // 한 프레임에서 전처리끼리 숫자가 다르면 어느 쪽도 정답으로 고정하지 않음
+  if (texts.length >= 2) {
+    return { state: { pending: {}, failStreak: 0 }, action: 'conflict', variant: null, text: '', count: 0, blocked: false };
   }
 
   const seen = {};
@@ -89,6 +98,9 @@ export function advanceVariantLock(prev, attempts, lockedVariant) {
     return { state, action: 'conflict', variant: top.variant, text: top.text, count: top.count };
   }
   if (top.count >= OCR_STABLE_READS) {
+    if (options && typeof options.blockLock === 'function' && options.blockLock(top.text)) {
+      return { state, action: 'conflict', variant: top.variant, text: top.text, count: top.count, blocked: true };
+    }
     return { state: { pending: {}, failStreak: 0 }, action: 'lock', variant: top.variant, text: top.text, count: top.count };
   }
   return { state, action: 'searching', variant: top.variant, text: top.text, count: top.count };
@@ -236,9 +248,41 @@ export function contentBounds(gray, W, H) {
   while (bottom > top && rowCount(bottom) < rowMin) bottom--;
   while (left < right && colCount(left) < colMin) left++;
   while (right > left && colCount(right) < colMin) right--;
+  // 숫자 바로 바깥의 작은 잉크(소수점)는 여백으로 잘라내지 않음. 빈 칸은 2칸까지만 건너뜀
+  function expandSmall(at, step, countAt) {
+    let cursor = at;
+    let gap = 0;
+    while (gap <= 2) {
+      const n = cursor + step;
+      const count = countAt(n);
+      if (count == null) break;
+      if (count >= 1 && count <= 4) {
+        cursor = n;
+        gap = 0;
+      } else if (count === 0) {
+        gap += 1;
+        cursor = n;
+      } else break;
+    }
+    while (cursor !== at) {
+      if (countAt(cursor) >= 1) break;
+      cursor -= step;
+    }
+    return cursor;
+  }
+  const countCol = (x) => (x < 0 || x >= W ? null : colCount(x));
+  const countRow = (y) => (y < 0 || y >= H ? null : rowCount(y));
+  left = expandSmall(left, -1, countCol);
+  right = expandSmall(right, 1, countCol);
+  top = expandSmall(top, -1, countRow);
+  bottom = expandSmall(bottom, 1, countRow);
   const ch = bottom - top + 1;
   const cw = right - left + 1;
-  if (ch < 8 || cw < 8) return full;
+  if (ch < 8 || cw < 8) return { x: 0, y: 0, w: W, h: H, keptFull: true };
+  // 잉크가 ROI의 얇은 조각뿐이면 그 조각만 확대해 한 자리로 읽히므로 사각형 전체를 유지
+  if (cw < W * OCR_FRAGMENT_WIDTH) {
+    return { x: 0, y: 0, w: W, h: H, keptFull: true };
+  }
   const pad = Math.max(2, Math.round(ch * 0.12));
   const x = Math.max(0, left - pad);
   const y = Math.max(0, top - pad);
@@ -348,16 +392,27 @@ export function createOcrPreprocessor(camera) {
 
     // 빈 여백을 걷어 숫자 높이가 OCR 입력 높이에 가깝게 한 뒤 확대/축소
     const box = contentBounds(grayOf(img.data, grabW * grabH), grabW, grabH);
-    const H = OCR_TARGET_H;
-    const W = Math.max(8, Math.round(box.w * H / box.h));
+    // 이미 목표 높이에 가까우면 한 번 더 키우거나 줄이지 않음
+    const near = box.h >= OCR_TARGET_H * 0.75 && box.h <= OCR_TARGET_H * 1.5;
+    const H = near ? box.h : OCR_TARGET_H;
+    const W = Math.max(8, near ? box.w : Math.round(box.w * H / box.h));
     sizeCanvas(scaledCanvas, W, H);
     const smooth = kiln.ocrSmooth !== false;
     scaledCtx.imageSmoothingEnabled = smooth;
     if (smooth) scaledCtx.imageSmoothingQuality = 'high';
     scaledCtx.clearRect(0, 0, W, H);
     scaledCtx.drawImage(sourceCanvas, box.x, box.y, box.w, box.h, 0, 0, W, H);
+    const contentH = box.h * (src.h / grabH);
     try {
-      return { source: sourceCanvas, scaled: scaledCtx.getImageData(0, 0, W, H) };
+      return {
+        source: sourceCanvas,
+        scaled: scaledCtx.getImageData(0, 0, W, H),
+        sourceW: src.w,
+        sourceH: src.h,
+        contentH,
+        keptFull: !!box.keptFull,
+        lowQuality: contentH < OCR_MIN_CONTENT_H
+      };
     } catch (e) {
       return null;
     }

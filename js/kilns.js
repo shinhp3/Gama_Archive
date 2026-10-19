@@ -11,11 +11,11 @@ import {
   MIN_GUIDE_ASPECT, MAX_GUIDE_ASPECT,
   RECOGNITION_MODES, DEFAULT_RECOGNITION_MODE, OCR_PREPROCESS_OPTIONS, OCR_VARIANTS, DEFAULT_OCR_PREPROCESS,
   OCR_LOCK_REVISION
-} from './config.js?v=0.3.10';
+} from './config.js?v=0.3.11';
 import {
   getKilns, putKiln, deleteKiln, getPref, setPref, removePref,
   readLegacyKilns, clearLegacyKilns
-} from './db.js?v=0.3.10';
+} from './db.js?v=0.3.11';
 
 const SAVE_DELAY_MS = 400; // 슬라이더처럼 값이 연속으로 바뀔 때 모았다가 저장하는 시간
 
