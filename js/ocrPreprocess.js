@@ -3,11 +3,11 @@
 // 픽셀 계산은 DOM 없이 쓸 수 있는 순수 함수, canvas 처리는 createOcrPreprocessor에서만
 
 import {
-  OCR_TARGET_H, OCR_PAD_RATIO, OCR_CLOSE_RATIO, OCR_THICKEN_RATIO, OCR_SATURATED_R, OCR_SATURATED_GB,
+  OCR_TARGET_H, OCR_GRAB_MAX_H, OCR_PAD_RATIO, OCR_CLOSE_RATIO, OCR_THICKEN_RATIO, OCR_SATURATED_R, OCR_SATURATED_GB,
   OCR_VARIANTS, OCR_STABLE_READS, OCR_RESEEK_FAILS
-} from './config.js?v=0.3.9';
-import { otsuThreshold } from './recognizer.js?v=0.3.9';
-import { kilnSourceRegion } from './roi.js?v=0.3.9';
+} from './config.js?v=0.3.10';
+import { otsuThreshold } from './recognizer.js?v=0.3.10';
+import { kilnSourceRegion } from './roi.js?v=0.3.10';
 
 // 전처리 방식 이름 (판독 보정 화면 표시용)
 export const VARIANT_LABELS = {
@@ -180,6 +180,73 @@ export function maskToRgba(mask) {
   return out;
 }
 
+function borderMedian(gray, W, H) {
+  const samples = [];
+  const stepX = Math.max(1, Math.floor(W / 32));
+  const stepY = Math.max(1, Math.floor(H / 32));
+  for (let x = 0; x < W; x += stepX) {
+    samples.push(gray[x]);
+    samples.push(gray[(H - 1) * W + x]);
+  }
+  for (let y = 0; y < H; y += stepY) {
+    samples.push(gray[y * W]);
+    samples.push(gray[y * W + W - 1]);
+  }
+  samples.sort((a, b) => a - b);
+  return samples[samples.length >> 1];
+}
+
+/**
+ * 사용자가 맞춘 ROI 안에서 거의 비어 있는 테두리 좌표.
+ * 화면 전체에서 숫자를 찾지 않고, 이미 지정된 사각형의 빈 여백만 걷어 숫자 높이를 유지한다.
+ * 잉크가 거의 없으면 원본 사각형을 그대로 돌려준다.
+ */
+export function contentBounds(gray, W, H) {
+  const full = { x: 0, y: 0, w: W, h: H };
+  if (!gray || W < 8 || H < 8 || gray.length < W * H) return full;
+  const bg = borderMedian(gray, W, H);
+  const ink = new Uint8Array(W * H);
+  let inkCount = 0;
+  for (let i = 0; i < W * H; i++) {
+    if (Math.abs(gray[i] - bg) >= 20) {
+      ink[i] = 1;
+      inkCount++;
+    }
+  }
+  if (inkCount < Math.max(12, Math.round(W * H * 0.004))) return full;
+
+  const rowMin = 2;
+  const colMin = 2;
+  const rowCount = (y) => {
+    let c = 0;
+    const row = y * W;
+    for (let x = 0; x < W; x++) c += ink[row + x];
+    return c;
+  };
+  const colCount = (x) => {
+    let c = 0;
+    for (let y = 0; y < H; y++) c += ink[y * W + x];
+    return c;
+  };
+  let top = 0;
+  let bottom = H - 1;
+  let left = 0;
+  let right = W - 1;
+  while (top < bottom && rowCount(top) < rowMin) top++;
+  while (bottom > top && rowCount(bottom) < rowMin) bottom--;
+  while (left < right && colCount(left) < colMin) left++;
+  while (right > left && colCount(right) < colMin) right--;
+  const ch = bottom - top + 1;
+  const cw = right - left + 1;
+  if (ch < 8 || cw < 8) return full;
+  const pad = Math.max(2, Math.round(ch * 0.12));
+  const x = Math.max(0, left - pad);
+  const y = Math.max(0, top - pad);
+  const x2 = Math.min(W, right + 1 + pad);
+  const y2 = Math.min(H, bottom + 1 + pad);
+  return { x, y, w: x2 - x, h: y2 - y };
+}
+
 function meanOf(score) {
   let sum = 0;
   for (let i = 0; i < score.length; i++) sum += score[i];
@@ -272,22 +339,23 @@ export function createOcrPreprocessor(camera) {
     if (!kiln || !kiln.roi || !size.width || !size.height) return null;
     // 회전했으면 원본 프레임에서 회전 보정해 수평으로 편 영역 (화면 노란 틀 안과 같은 영역)
     const src = kilnSourceRegion(kiln, size.width, size.height);
-    const h0 = Math.max(8, Math.round(Math.min(src.h, OCR_TARGET_H)));
-    const w0 = Math.max(8, Math.round(src.w * h0 / src.h));
-    const img = camera.grabRegion(src, w0, h0);
+    const grabH = Math.max(8, Math.min(Math.round(src.h), OCR_GRAB_MAX_H));
+    const grabW = Math.max(8, Math.round(src.w * grabH / src.h));
+    const img = camera.grabRegion(src, grabW, grabH);
     if (!img) return null;
-    sizeCanvas(sourceCanvas, w0, h0);
+    sizeCanvas(sourceCanvas, grabW, grabH);
     sourceCtx.putImageData(img, 0, 0);
 
-    // ROI가 작으면 OCR 입력 높이까지 확대: 부드러운 보간(기본) 또는 최근접 이웃 (가마 설정에서 비교 가능)
+    // 빈 여백을 걷어 숫자 높이가 OCR 입력 높이에 가깝게 한 뒤 확대/축소
+    const box = contentBounds(grayOf(img.data, grabW * grabH), grabW, grabH);
     const H = OCR_TARGET_H;
-    const W = Math.max(8, Math.round(w0 * H / h0));
+    const W = Math.max(8, Math.round(box.w * H / box.h));
     sizeCanvas(scaledCanvas, W, H);
     const smooth = kiln.ocrSmooth !== false;
     scaledCtx.imageSmoothingEnabled = smooth;
     if (smooth) scaledCtx.imageSmoothingQuality = 'high';
     scaledCtx.clearRect(0, 0, W, H);
-    scaledCtx.drawImage(sourceCanvas, 0, 0, W, H);
+    scaledCtx.drawImage(sourceCanvas, box.x, box.y, box.w, box.h, 0, 0, W, H);
     try {
       return { source: sourceCanvas, scaled: scaledCtx.getImageData(0, 0, W, H) };
     } catch (e) {

@@ -4,9 +4,9 @@
 
 import {
   TESSERACT_WORKER_PATH, TESSERACT_CORE_PATH, TESSERACT_LANG_PATH, OCR_LANG, OCR_LANG_GZIP, OCR_WHITELIST,
-  OCR_PSM_SINGLE_LINE, OCR_MIN_CONFIDENCE, OCR_INIT_TIMEOUT_MS, OCR_RECOGNIZE_TIMEOUT_MS,
+  OCR_PSM_SINGLE_LINE, OCR_MIN_CONFIDENCE, OCR_MIN_CHAR_CONFIDENCE, OCR_INIT_TIMEOUT_MS, OCR_RECOGNIZE_TIMEOUT_MS,
   TEMP_MIN, TEMP_MAX
-} from './config.js?v=0.3.9';
+} from './config.js?v=0.3.10';
 
 const OEM_LSTM_ONLY = 1;
 const LIBRARY_WAIT_MS = 20000;
@@ -176,8 +176,20 @@ export function parseOcrText(raw, words) {
  * OCR 출력 → 판독 결과 (7세그먼트 판독 결과와 같은 기본 구조)
  * @returns {{ ok, temp, value, candidate, text, rawText, confidence, digits, reason, engine, status, multiple }}
  */
-export function judgeOcr(rawText, confidence, words) {
+function minDigitConfidence(symbols) {
+  if (!Array.isArray(symbols) || !symbols.length) return null;
+  let min = null;
+  symbols.forEach((s) => {
+    const t = String(s && s.text || '').trim();
+    if (!/^[0-9.]$/.test(t) || typeof s.confidence !== 'number') return;
+    if (min === null || s.confidence < min) min = s.confidence;
+  });
+  return min;
+}
+
+export function judgeOcr(rawText, confidence, words, symbols) {
   const p = parseOcrText(rawText, words);
+  const charConfidence = minDigitConfidence(symbols);
   const res = {
     ok: false,
     temp: null,
@@ -186,6 +198,7 @@ export function judgeOcr(rawText, confidence, words) {
     text: p.text,
     rawText: typeof rawText === 'string' ? rawText : '',
     confidence,
+    charConfidence,
     digits: p.text.split('').map((ch) => ({ value: ch })),
     reason: p.reason,
     multiple: p.multiple,
@@ -195,6 +208,10 @@ export function judgeOcr(rawText, confidence, words) {
   if (!p.ok) return res;
   if (confidence < OCR_MIN_CONFIDENCE) {
     res.reason = '인식 신뢰도가 낮습니다 (' + Math.round(confidence * 100) + '%).';
+    return res;
+  }
+  if (charConfidence !== null && charConfidence < OCR_MIN_CHAR_CONFIDENCE) {
+    res.reason = '한 자리가 불안정합니다 (' + Math.round(charConfidence * 100) + '%). 비슷한 숫자로 확정하지 않았습니다.';
     return res;
   }
   res.ok = true;
@@ -302,7 +319,10 @@ export function createOcrEngine(hooks) {
         return w.setParameters({
           tessedit_char_whitelist: OCR_WHITELIST,
           tessedit_pageseg_mode: OCR_PSM_SINGLE_LINE,
-          user_defined_dpi: '300'
+          user_defined_dpi: '300',
+          classify_bln_numeric_mode: '1',
+          load_system_dawg: '0',
+          load_freq_dawg: '0'
         });
       })
       .then(() => {
@@ -332,10 +352,15 @@ export function createOcrEngine(hooks) {
           confidence: normalizeConfidence(w.confidence),
           bbox: w.bbox ? { x0: w.bbox.x0, y0: w.bbox.y0, x1: w.bbox.x1, y1: w.bbox.y1 } : null
         })) : [];
+        const symbols = Array.isArray(data.symbols) ? data.symbols.map((s) => ({
+          text: typeof s.text === 'string' ? s.text : '',
+          confidence: normalizeConfidence(s.confidence)
+        })) : [];
         return {
           rawText: typeof data.text === 'string' ? data.text : '',
           confidence: normalizeConfidence(data.confidence),
-          words
+          words,
+          symbols
         };
       })
       .catch((err) => {

@@ -9,12 +9,13 @@ import {
   DEFAULT_DIGIT_ASPECT, MIN_DIGIT_ASPECT, MAX_DIGIT_ASPECT, MIN_ZOOM, MAX_ZOOM,
   DEFAULT_GUIDE_WIDTH_RATIO, MIN_GUIDE_WIDTH_RATIO, MAX_GUIDE_WIDTH_RATIO, MAX_ROTATION_DEG, ROTATION_STEP_DEG,
   MIN_GUIDE_ASPECT, MAX_GUIDE_ASPECT,
-  RECOGNITION_MODES, DEFAULT_RECOGNITION_MODE, OCR_PREPROCESS_OPTIONS, OCR_VARIANTS, DEFAULT_OCR_PREPROCESS
-} from './config.js?v=0.3.9';
+  RECOGNITION_MODES, DEFAULT_RECOGNITION_MODE, OCR_PREPROCESS_OPTIONS, OCR_VARIANTS, DEFAULT_OCR_PREPROCESS,
+  OCR_LOCK_REVISION
+} from './config.js?v=0.3.10';
 import {
   getKilns, putKiln, deleteKiln, getPref, setPref, removePref,
   readLegacyKilns, clearLegacyKilns
-} from './db.js?v=0.3.9';
+} from './db.js?v=0.3.10';
 
 const SAVE_DELAY_MS = 400; // 슬라이더처럼 값이 연속으로 바뀔 때 모았다가 저장하는 시간
 
@@ -94,7 +95,10 @@ export function sanitizeKiln(raw) {
     recognitionMode: RECOGNITION_MODES.indexOf(raw.recognitionMode) >= 0 ? raw.recognitionMode : DEFAULT_RECOGNITION_MODE,
     ocrPreprocess: normalizePreprocess(raw.ocrPreprocess),
     // 자동 탐색으로 고정한 전처리. 없거나 알 수 없는 값이면 다시 탐색
-    ocrLockedVariant: OCR_VARIANTS.indexOf(raw.ocrLockedVariant) >= 0 ? raw.ocrLockedVariant : null,
+    ocrLockedVariant: raw.ocrLockRevision === OCR_LOCK_REVISION && OCR_VARIANTS.indexOf(raw.ocrLockedVariant) >= 0
+      ? raw.ocrLockedVariant
+      : null,
+    ocrLockRevision: OCR_LOCK_REVISION,
     ocrSmooth: raw.ocrSmooth !== false,  // OCR 입력 확대 보간: true = 부드럽게, false = 최근접 이웃
     createdAt: isNum(raw.createdAt) ? raw.createdAt : Date.now()
   };

@@ -1,18 +1,18 @@
 // ===== 진입점 =====
 // 화면 요소를 찾아 각 모듈을 연결하고, 탭 전환과 이벤트 처리를 담당
 
-import { APP_VERSION, PREVIEW_INTERVAL_MS, LIVE_READ_MS, CAMERA_IDEAL_W, CAMERA_IDEAL_H } from './config.js?v=0.3.9';
-import { initDb } from './db.js?v=0.3.9';
-import { createCamera } from './camera.js?v=0.3.9';
-import { createRoiEditor, kilnSourceRegion } from './roi.js?v=0.3.9';
-import { createKilnManager } from './kilns.js?v=0.3.9';
-import { createReader, createLiveDisplay, recognitionMode } from './reading.js?v=0.3.9';
-import { createOcrEngine } from './ocr.js?v=0.3.9';
-import { createOcrPreprocessor } from './ocrPreprocess.js?v=0.3.9';
-import { createCalibrationPanel } from './calibration.js?v=0.3.9';
-import { segmentQuads } from './recognizer.js?v=0.3.9';
-import { createRecorder } from './recorder.js?v=0.3.9';
-import { createHistoryView } from './history.js?v=0.3.9';
+import { APP_VERSION, PREVIEW_INTERVAL_MS, LIVE_READ_MS, CAMERA_IDEAL_W, CAMERA_IDEAL_H, OCR_LOCK_REVISION } from './config.js?v=0.3.10';
+import { initDb } from './db.js?v=0.3.10';
+import { createCamera } from './camera.js?v=0.3.10';
+import { createRoiEditor, kilnSourceRegion } from './roi.js?v=0.3.10';
+import { createKilnManager } from './kilns.js?v=0.3.10';
+import { createReader, createLiveDisplay, recognitionMode } from './reading.js?v=0.3.10';
+import { createOcrEngine } from './ocr.js?v=0.3.10';
+import { createOcrPreprocessor } from './ocrPreprocess.js?v=0.3.10';
+import { createCalibrationPanel } from './calibration.js?v=0.3.10';
+import { segmentQuads } from './recognizer.js?v=0.3.10';
+import { createRecorder } from './recorder.js?v=0.3.10';
+import { createHistoryView } from './history.js?v=0.3.10';
 
 const TABS = ['record', 'history'];
 const ROI_RESET_MESSAGE = '화면 방향이 바뀌어 영역이 초기화되었습니다. 영역 버튼을 눌러 온도 숫자 전체가 노란 네모 안에 들어오도록 다시 맞춰 주세요.';
@@ -240,8 +240,8 @@ function startApp() {
     onLockVariant: (variant) => {
       const k = kilns.current();
       if (!k || k.ocrPreprocess !== 'auto') return;
-      if ((k.ocrLockedVariant || null) === (variant || null)) return;
-      kilns.update({ ocrLockedVariant: variant }, false);
+      if ((k.ocrLockedVariant || null) === (variant || null) && k.ocrLockRevision === OCR_LOCK_REVISION) return;
+      kilns.update({ ocrLockedVariant: variant, ocrLockRevision: OCR_LOCK_REVISION }, false);
     }
   });
 

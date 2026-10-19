@@ -4,12 +4,12 @@
 
 import {
   READ_MAX_W, CONF_HIGH, CONF_LOW, FRAME_SETTLE_MS, OCR_STABLE_READS
-} from './config.js?v=0.3.9';
-import { createValidatorState, validateReading } from './temperature-validator.js?v=0.3.9';
-import { kilnSourceRegion, frameBlockReason } from './roi.js?v=0.3.9';
-import { recognize } from './recognizer.js?v=0.3.9';
-import { judgeOcr, formatTemp } from './ocr.js?v=0.3.9';
-import { variantOrder, advanceVariantLock, VARIANT_LABELS } from './ocrPreprocess.js?v=0.3.9';
+} from './config.js?v=0.3.10';
+import { createValidatorState, validateReading } from './temperature-validator.js?v=0.3.10';
+import { kilnSourceRegion, frameBlockReason } from './roi.js?v=0.3.10';
+import { recognize } from './recognizer.js?v=0.3.10';
+import { judgeOcr, formatTemp } from './ocr.js?v=0.3.10';
+import { variantOrder, advanceVariantLock, VARIANT_LABELS } from './ocrPreprocess.js?v=0.3.10';
 
 export const ENGINE_LABELS = { ocr: 'OCR', sevenSegment: '7세그먼트' };
 
@@ -188,7 +188,7 @@ export function createReader(deps) {
           const built = deps.preprocessor.build(frame, order[i], k);
           const out = await ocr.recognize(built.canvas);
           if (gen !== generation) break;
-          const one = judgeOcr(out.rawText, out.confidence, out.words);
+          const one = judgeOcr(out.rawText, out.confidence, out.words, out.symbols);
           one.variant = order[i];
           one.image = built.canvas;
           one.otsu = built.otsu;
