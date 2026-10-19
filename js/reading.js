@@ -4,13 +4,13 @@
 
 import {
   READ_MAX_W, CONF_HIGH, CONF_LOW, FRAME_SETTLE_MS, OCR_STABLE_READS, OCR_LANG
-} from './config.js?v=0.3.11';
-import { markTiming } from './timings.js?v=0.3.11';
-import { createValidatorState, validateReading } from './temperature-validator.js?v=0.3.11';
-import { kilnSourceRegion, frameBlockReason } from './roi.js?v=0.3.11';
-import { recognize } from './recognizer.js?v=0.3.11';
-import { judgeOcr, formatTemp } from './ocr.js?v=0.3.11';
-import { variantOrder, advanceVariantLock, VARIANT_LABELS } from './ocrPreprocess.js?v=0.3.11';
+} from './config.js?v=0.3.12';
+import { markTiming } from './timings.js?v=0.3.12';
+import { createValidatorState, validateReading } from './temperature-validator.js?v=0.3.12';
+import { kilnSourceRegion, frameBlockReason } from './roi.js?v=0.3.12';
+import { recognize } from './recognizer.js?v=0.3.12';
+import { judgeOcr, formatTemp } from './ocr.js?v=0.3.12';
+import { variantOrder, advanceVariantLock, VARIANT_LABELS } from './ocrPreprocess.js?v=0.3.12';
 
 export const ENGINE_LABELS = { ocr: 'OCR', sevenSegment: '7세그먼트' };
 
@@ -357,6 +357,12 @@ export function createReader(deps) {
   }
 
   return { tick, invalidate, reset, requestNow, activity, resetValidation, clearSearch };
+}
+
+// 소성 시작 전에 필요한 안정 인식. 시간 검증을 통과한 온도가 있고, 품질 경고가 없을 때.
+export function isRecognitionReady(res) {
+  const v = res && res.validation;
+  return !!(res && res.ok && !res.lowQuality && v && v.status === 'normal' && typeof v.validatedTemp === 'number');
 }
 
 // 검증 상태 표시 문구

@@ -1,8 +1,8 @@
 // ===== 카메라 =====
 // 후면 카메라 스트림 시작/중지, 영상 프레임에서 원하는 영역을 잘라내기
 
-import { CAMERA_IDEAL_W, CAMERA_IDEAL_H } from './config.js?v=0.3.11';
-import { markTiming } from './timings.js?v=0.3.11';
+import { CAMERA_IDEAL_W, CAMERA_IDEAL_H } from './config.js?v=0.3.12';
+import { markTiming } from './timings.js?v=0.3.12';
 
 const PERMISSION_ERRORS = ['NotAllowedError', 'PermissionDeniedError', 'SecurityError'];
 
@@ -38,7 +38,6 @@ export function createCamera(els, hooks) {
   let stream = null;
   let opening = false;
   let openGen = 0;
-  let activeDeviceId = '';
 
   // 판독용 작업 캔버스 (화면에 붙이지 않음). getImageData를 자주 호출하므로 willReadFrequently 지정
   const workCanvas = document.createElement('canvas');
@@ -75,10 +74,9 @@ export function createCamera(els, hooks) {
     return coarse && !fineHover;
   }
 
-  function videoConstraints(deviceId, withSize) {
+  function videoConstraints(withSize) {
     const videoCons = {};
-    if (deviceId) videoCons.deviceId = { exact: deviceId };
-    else if (wantsRearCamera()) videoCons.facingMode = { ideal: 'environment' };
+    if (wantsRearCamera()) videoCons.facingMode = { ideal: 'environment' };
     if (withSize) {
       videoCons.width = { ideal: CAMERA_IDEAL_W };
       videoCons.height = { ideal: CAMERA_IDEAL_H };
@@ -86,16 +84,11 @@ export function createCamera(els, hooks) {
     return { audio: false, video: videoCons };
   }
 
-  function requestStream(deviceId) {
-    return navigator.mediaDevices.getUserMedia(videoConstraints(deviceId, true))
+  function requestStream() {
+    return navigator.mediaDevices.getUserMedia(videoConstraints(true))
       .catch((err) => {
         if (err && PERMISSION_ERRORS.indexOf(err.name) >= 0) throw err;
-        return navigator.mediaDevices.getUserMedia(videoConstraints(deviceId, false));
-      })
-      .catch((err) => {
-        if (err && PERMISSION_ERRORS.indexOf(err.name) >= 0) throw err;
-        if (!deviceId) throw err;
-        return navigator.mediaDevices.getUserMedia(videoConstraints('', false));
+        return navigator.mediaDevices.getUserMedia(videoConstraints(false));
       });
   }
 
@@ -107,25 +100,8 @@ export function createCamera(els, hooks) {
       });
     }
     stream = null;
-    activeDeviceId = '';
     try { video.pause(); } catch (e) { /* 무시 */ }
     video.srcObject = null;
-  }
-
-  function listVideoInputs() {
-    if (!navigator.mediaDevices || typeof navigator.mediaDevices.enumerateDevices !== 'function') {
-      return Promise.resolve([]);
-    }
-    return navigator.mediaDevices.enumerateDevices()
-      .then((list) => (list || []).filter((d) => d.kind === 'videoinput' && d.deviceId))
-      .catch(() => []);
-  }
-
-  function publishDevices() {
-    if (!hooks.onDevices) return;
-    listVideoInputs().then((devices) => {
-      hooks.onDevices(devices, activeDeviceId);
-    });
   }
 
   function attachStream(s) {
@@ -134,7 +110,6 @@ export function createCamera(els, hooks) {
       t.addEventListener('ended', onTrackEnded);
     });
     const settings = trackSettings();
-    activeDeviceId = settings && settings.deviceId ? settings.deviceId : '';
     const sizeNote = (settings && settings.width) ? (settings.width + 'x' + settings.height) : '';
     markTiming('cameraStarted', sizeNote);
 
@@ -148,15 +123,11 @@ export function createCamera(els, hooks) {
     placeholder.hidden = true;
     setButton(true);
     button.disabled = false;
-    publishDevices();
     hooks.onStarted();
   }
 
-  // 버튼 클릭 또는 카메라 목록 변경에서 호출. deviceId가 있으면 그 장치로 연다.
-  function start(deviceId) {
-    const nextId = deviceId || '';
-    if (stream && nextId && nextId === activeDeviceId) return;
-    if (opening) return;
+  function start() {
+    if (stream || opening) return;
 
     if (window.isSecureContext === false) {
       hooks.onMessage('카메라는 HTTPS 주소에서만 사용할 수 있습니다.', 'error');
@@ -174,7 +145,7 @@ export function createCamera(els, hooks) {
     markTiming('cameraRequest');
     releaseStream();
 
-    requestStream(nextId)
+    requestStream()
       .then((s) => {
         if (gen !== openGen) {
           s.getTracks().forEach((t) => t.stop());
@@ -265,7 +236,6 @@ export function createCamera(els, hooks) {
   }
 
   return {
-    start, stop, isRunning, videoSize, trackSettings, isFrameReady, resumeIfPaused, drawRegion, grabRegion,
-    currentDeviceId: () => activeDeviceId
+    start, stop, isRunning, videoSize, trackSettings, isFrameReady, resumeIfPaused, drawRegion, grabRegion
   };
 }

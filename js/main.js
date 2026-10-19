@@ -1,19 +1,20 @@
 // ===== 진입점 =====
 // 화면 요소를 찾아 각 모듈을 연결하고, 탭 전환과 이벤트 처리를 담당
 
-import { APP_VERSION, PREVIEW_INTERVAL_MS, LIVE_READ_MS, CAMERA_IDEAL_W, CAMERA_IDEAL_H, OCR_LOCK_REVISION } from './config.js?v=0.3.11';
-import { initDb } from './db.js?v=0.3.11';
-import { createCamera } from './camera.js?v=0.3.11';
-import { createRoiEditor, kilnSourceRegion, frameAspectRelation } from './roi.js?v=0.3.11';
-import { markTiming, timingText } from './timings.js?v=0.3.11';
-import { createKilnManager } from './kilns.js?v=0.3.11';
-import { createReader, createLiveDisplay, recognitionMode } from './reading.js?v=0.3.11';
-import { createOcrEngine } from './ocr.js?v=0.3.11';
-import { createOcrPreprocessor } from './ocrPreprocess.js?v=0.3.11';
-import { createCalibrationPanel } from './calibration.js?v=0.3.11';
-import { segmentQuads } from './recognizer.js?v=0.3.11';
-import { createRecorder } from './recorder.js?v=0.3.11';
-import { createHistoryView } from './history.js?v=0.3.11';
+import { APP_VERSION, PREVIEW_INTERVAL_MS, LIVE_READ_MS, CAMERA_IDEAL_W, CAMERA_IDEAL_H, OCR_LOCK_REVISION } from './config.js?v=0.3.12';
+import { initDb } from './db.js?v=0.3.12';
+import { createCamera } from './camera.js?v=0.3.12';
+import { createRoiEditor, kilnSourceRegion, frameAspectRelation } from './roi.js?v=0.3.12';
+import { markTiming, timingText } from './timings.js?v=0.3.12';
+import { createKilnManager } from './kilns.js?v=0.3.12';
+import { createReader, createLiveDisplay, recognitionMode, isRecognitionReady } from './reading.js?v=0.3.12';
+import { formatTemp } from './ocr.js?v=0.3.12';
+import { createOcrEngine } from './ocr.js?v=0.3.12';
+import { createOcrPreprocessor } from './ocrPreprocess.js?v=0.3.12';
+import { createCalibrationPanel } from './calibration.js?v=0.3.12';
+import { segmentQuads } from './recognizer.js?v=0.3.12';
+import { createRecorder } from './recorder.js?v=0.3.12';
+import { createHistoryView } from './history.js?v=0.3.12';
 
 const TABS = ['record', 'history'];
 
@@ -47,8 +48,9 @@ function getElements() {
     deleteFiringBtn: $('deleteFiringBtn'),
     roiEditBtn: $('roiEditBtn'),
     cameraBtn: $('cameraBtn'),
-    cameraField: $('cameraField'),
-    cameraSelect: $('cameraSelect'),
+    readyDialog: $('readyDialog'),
+    readyDialogTemp: $('readyDialogTemp'),
+    readyDialogOk: $('readyDialogOk'),
     videoWrap: $('videoWrap'),
     video: $('video'),
     overlay: $('overlay'),
@@ -187,8 +189,7 @@ function startApp() {
     {
       onMessage: showMessage,
       onStarted: handleCameraStarted,
-      onEnded: handleCameraEnded,
-      onDevices: renderCameraList
+      onEnded: handleCameraEnded
     }
   );
 
@@ -223,6 +224,7 @@ function startApp() {
       onCommit: (patch, soon) => {
         kilns.update(patch, soon);
         reader.invalidate(); // 영역이 바뀌면 진행 중인 OCR 결과는 버림
+        clearRecognitionReady();
       }
     }
   );
@@ -334,9 +336,26 @@ function startApp() {
     els.firingElapsed.textContent = parts.join(' ');
   }
 
+  let recognitionReady = false;
+  let readyAnnounced = false;
+
   function canStartFiring() {
     const k = kilns.current();
-    return !!(k && k.roi && camera.isRunning() && !recorder.isActive());
+    return !!(k && k.roi && camera.isRunning() && recognitionReady && !recorder.isActive());
+  }
+
+  function clearRecognitionReady() {
+    recognitionReady = false;
+    readyAnnounced = false;
+    if (els.readyDialog) els.readyDialog.hidden = true;
+    updateStartButton();
+  }
+
+  function showReadyDialog(temp) {
+    if (!els.readyDialog || !els.readyDialogTemp) return;
+    els.readyDialogTemp.textContent = formatTemp(temp) + '°C';
+    els.readyDialog.hidden = false;
+    if (els.readyDialogOk) els.readyDialogOk.focus();
   }
 
   function updateStartButton() {
@@ -407,6 +426,15 @@ function startApp() {
       els.calib.ocrRoi.textContent = res.roiSource.w + '×' + res.roiSource.h + 'px · 숫자 높이 ' + res.roiSource.contentH + 'px';
     }
     updateTimingView();
+
+    const ready = isRecognitionReady(res);
+    const becameReady = ready && !recognitionReady;
+    recognitionReady = ready;
+    if (becameReady && !recorder.isActive() && !readyAnnounced) {
+      readyAnnounced = true;
+      showReadyDialog(res.validation.validatedTemp);
+    }
+    if (!recorder.isActive()) updateStartButton();
     
     // 소성 기록 중이면 recorder에 전달
     recorder.addReading(res);
@@ -463,27 +491,6 @@ function startApp() {
       showMessage('카메라 원본 비율이 바뀌었습니다. 노란 네모가 숫자와 맞는지 영역 버튼으로 확인하세요. 저장된 영역은 지우지 않았습니다.', 'error');
     }
     refreshCameraView();
-  }
-
-  let fillingCameras = false;
-  function renderCameraList(devices, activeId) {
-    const usable = (devices || []).filter((d) => d && d.deviceId);
-    if (!els.cameraField || !els.cameraSelect) return;
-    if (usable.length < 2) {
-      els.cameraField.hidden = true;
-      return;
-    }
-    fillingCameras = true;
-    els.cameraSelect.textContent = '';
-    usable.forEach((d, i) => {
-      const opt = document.createElement('option');
-      opt.value = d.deviceId;
-      opt.textContent = d.label || ('카메라 ' + (i + 1));
-      els.cameraSelect.appendChild(opt);
-    });
-    if (activeId && usable.some((d) => d.deviceId === activeId)) els.cameraSelect.value = activeId;
-    els.cameraField.hidden = false;
-    fillingCameras = false;
   }
 
   // ===== 기록 보기 =====
@@ -564,6 +571,7 @@ function startApp() {
     updateStartButton(); // 소성 시작 버튼 상태 갱신
     calib.render();
     if (switched) {
+      clearRecognitionReady();
       roi.cancelGesture();
       reader.reset(); // 이전 가마의 인식값을 지우고, 늦게 끝난 이전 가마 OCR 결과는 버림
       if (roi.isEditable()) roi.setEditable(true); // 영역 지정 중에 가마를 바꾸면 바뀐 가마도 지금 틀 위치로 지정
@@ -599,6 +607,7 @@ function startApp() {
 
   function stopCamera() {
     camera.stop();
+    clearRecognitionReady();
     reader.invalidate(); // 진행 중인 OCR 결과는 버리고 새 판독은 시작하지 않음 (카메라 꺼짐)
     roi.cancelGesture();
     updateRoiButton();
@@ -629,10 +638,10 @@ function startApp() {
       }
     });
 
-    if (els.cameraSelect) {
-      els.cameraSelect.addEventListener('change', () => {
-        if (fillingCameras) return;
-        camera.start(els.cameraSelect.value);
+    if (els.readyDialogOk) {
+      els.readyDialogOk.addEventListener('click', () => {
+        els.readyDialog.hidden = true;
+        if (!els.startFiringBtn.disabled) els.startFiringBtn.focus();
       });
     }
 
@@ -647,7 +656,7 @@ function startApp() {
         showMessage('소성 기록을 시작했습니다.', 'ok', 3000);
       } catch (err) {
         showMessage(err.message || '소성을 시작하지 못했습니다.', 'error');
-        els.startFiringBtn.disabled = false;
+        updateStartButton();
       }
     });
     
@@ -666,6 +675,7 @@ function startApp() {
     // 급변 경고가 계속될 때: 사용자가 표시창을 직접 확인한 뒤 기준 온도를 처음부터 다시 확립
     els.validResetBtn.addEventListener('click', () => {
       reader.resetValidation();
+      clearRecognitionReady();
       els.validResetBtn.hidden = true;
       readNow();
     });

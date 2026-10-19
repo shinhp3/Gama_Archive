@@ -206,7 +206,28 @@ select { -webkit-appearance: none; appearance: none; padding-right: clamp(36px, 
 }
 .card-head h2 { margin: 0; }
 .head-actions { display: flex; gap: clamp(6px, 1vw, 8px); }
-.camera-field { display: block; margin: 0 0 10px; }
+.ready-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.45);
+}
+.ready-dialog[hidden] { display: none; }
+.ready-dialog-card {
+  width: min(420px, 100%);
+  padding: 20px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--card);
+  color: var(--text);
+}
+.ready-dialog-card h2 { margin: 0 0 8px; }
+.ready-dialog-card p { margin: 0 0 16px; line-height: 1.5; }
+.ready-dialog-card button { width: 100%; }
 .timing-log { white-space: pre-wrap; font-weight: 500; font-size: clamp(12px, 1.8vw, 13px); }
 
 /* 아이콘만 있는 정사각 버튼 (영역 지정) */

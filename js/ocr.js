@@ -6,8 +6,8 @@ import {
   TESSERACT_WORKER_PATH, TESSERACT_CORE_PATH, TESSERACT_LANG_PATH, OCR_LANG, OCR_LANG_GZIP, OCR_WHITELIST,
   OCR_PSM_SINGLE_LINE, OCR_MIN_CONFIDENCE, OCR_MIN_CHAR_CONFIDENCE, OCR_INIT_TIMEOUT_MS, OCR_RECOGNIZE_TIMEOUT_MS,
   TEMP_MIN, TEMP_MAX
-} from './config.js?v=0.3.11';
-import { markTiming } from './timings.js?v=0.3.11';
+} from './config.js?v=0.3.12';
+import { markTiming } from './timings.js?v=0.3.12';
 
 const OEM_LSTM_ONLY = 1;
 const LIBRARY_WAIT_MS = 20000;

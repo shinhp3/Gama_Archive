@@ -8,7 +8,7 @@ import {
   DEFAULT_GUIDE_ASPECT, MIN_GUIDE_ASPECT, MAX_GUIDE_ASPECT, GUIDE_ASPECT_STEP,
   MAX_ROTATION_DEG, ROTATION_STEP_DEG,
   GUIDE_MAX_HEIGHT_RATIO, MIN_ZOOM, MAX_ZOOM, ZOOM_STEP
-} from './config.js?v=0.3.11';
+} from './config.js?v=0.3.12';
 
 function clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
 function round3(v) { return Math.round(v * 1000) / 1000; }
