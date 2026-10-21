@@ -11,11 +11,11 @@ import {
   MIN_GUIDE_ASPECT, MAX_GUIDE_ASPECT,
   RECOGNITION_MODES, DEFAULT_RECOGNITION_MODE, OCR_PREPROCESS_OPTIONS, OCR_VARIANTS, DEFAULT_OCR_PREPROCESS,
   OCR_LOCK_REVISION
-} from './config.js?v=0.3.12';
+} from './config.js?v=0.3.15';
 import {
   getKilns, putKiln, deleteKiln, getPref, setPref, removePref,
   readLegacyKilns, clearLegacyKilns
-} from './db.js?v=0.3.12';
+} from './db.js?v=0.3.15';
 
 const SAVE_DELAY_MS = 400; // 슬라이더처럼 값이 연속으로 바뀔 때 모았다가 저장하는 시간
 
@@ -351,7 +351,7 @@ export function createKilnManager(els, hooks) {
     els.deleteKilnBtn.disabled = !k;
     els.addKilnBtn.classList.toggle('primary', kilns.length === 0); // 가마가 없으면 추가 버튼 강조
 
-    els.kilnSettings.hidden = !k;
+    els.kilnSettings.hidden = true;
     if (!k) return;
     els.digitsSelect.value = String(k.digits);
     els.intervalSelect.value = String(k.readIntervalSec);

@@ -3,14 +3,14 @@
 // OCR은 오래 걸리므로 한 번에 하나만 실행하고, 가마·설정이 바뀌거나 카메라가 꺼진 뒤 늦게 끝난 결과는 버림
 
 import {
-  READ_MAX_W, CONF_HIGH, CONF_LOW, FRAME_SETTLE_MS, OCR_STABLE_READS, OCR_LANG
-} from './config.js?v=0.3.12';
-import { markTiming } from './timings.js?v=0.3.12';
-import { createValidatorState, validateReading } from './temperature-validator.js?v=0.3.12';
-import { kilnSourceRegion, frameBlockReason } from './roi.js?v=0.3.12';
-import { recognize } from './recognizer.js?v=0.3.12';
-import { judgeOcr, formatTemp } from './ocr.js?v=0.3.12';
-import { variantOrder, advanceVariantLock, VARIANT_LABELS } from './ocrPreprocess.js?v=0.3.12';
+  READ_MAX_W, CONF_HIGH, CONF_LOW, FRAME_SETTLE_MS, OCR_STABLE_READS, OCR_LANG, CONFIRM_INTERVAL_MS
+} from './config.js?v=0.3.15';
+import { markTiming } from './timings.js?v=0.3.15';
+import { createValidatorState, validateReading } from './temperature-validator.js?v=0.3.15';
+import { kilnSourceRegion, frameBlockReason } from './roi.js?v=0.3.15';
+import { recognize } from './recognizer.js?v=0.3.15';
+import { judgeOcr, formatTemp } from './ocr.js?v=0.3.15';
+import { variantOrder, advanceVariantLock, VARIANT_LABELS } from './ocrPreprocess.js?v=0.3.15';
 
 export const ENGINE_LABELS = { ocr: 'OCR', sevenSegment: '7세그먼트' };
 
@@ -242,6 +242,9 @@ export function createReader(deps) {
               holdForSearch(result, whyConflict, 'conflict');
             } else if (decision.action === 'fail') {
               result.preprocessState = 'locked';
+            } else if (decision.action === 'searching' && result.ok) {
+              // 첫 성공도 검증 횟수에 넣어, 같은 숫자가 한 번 더 나오면 바로 기준이 되게 함
+              result.preprocessState = 'searching';
             } else {
               const multi = judged.filter((j) => j.multiple)[0];
               let why;
@@ -326,7 +329,9 @@ export function createReader(deps) {
       return;
     }
     if (st !== 'ready' || busy) return;
-    if (Date.now() - lastStartAt < k.readIntervalSec * 1000) return;
+    const phase = (validators.get(k.id) || {}).phase;
+    const wait = phase === 'normal' || phase === 'suspect' ? k.readIntervalSec * 1000 : CONFIRM_INTERVAL_MS;
+    if (Date.now() - lastStartAt < wait) return;
     runOcr(k);
   }
 
@@ -392,6 +397,15 @@ export function createLiveDisplay(els) {
     if (els.confirmedTemp) {
       els.confirmedTemp.textContent = confirmed == null ? '—' : formatTemp(confirmed);
       els.confirmedTemp.classList.toggle('is-empty', confirmed == null);
+    }
+    const shown = confirmed != null ? confirmed : raw;
+    if (els.cameraTempValue) {
+      els.cameraTempValue.textContent = shown == null ? '—' : formatTemp(shown);
+      els.cameraTempValue.classList.toggle('is-empty', shown == null);
+    }
+    if (els.cameraTemp) {
+      els.cameraTemp.hidden = shown == null;
+      els.cameraTemp.classList.toggle('is-warning', !!(v && v.warning));
     }
 
     // 검증 상태 (OCR 신뢰도와 별개)

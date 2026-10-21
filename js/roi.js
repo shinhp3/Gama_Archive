@@ -3,12 +3,12 @@
 // 틀·오버레이 그리기, 핀치/드래그 조작, 좌표 변환, 영역 확대 미리보기
 
 import {
-  ROI_COLOR, PREVIEW_MAX_W, PREVIEW_MAX_H, DEFAULT_DIGITS, DEFAULT_DIGIT_ASPECT,
+  ROI_COLOR, DEFAULT_DIGITS, DEFAULT_DIGIT_ASPECT,
   DEFAULT_GUIDE_WIDTH_RATIO, MIN_GUIDE_WIDTH_RATIO, MAX_GUIDE_WIDTH_RATIO, GUIDE_WIDTH_STEP,
   DEFAULT_GUIDE_ASPECT, MIN_GUIDE_ASPECT, MAX_GUIDE_ASPECT, GUIDE_ASPECT_STEP,
   MAX_ROTATION_DEG, ROTATION_STEP_DEG,
   GUIDE_MAX_HEIGHT_RATIO, MIN_ZOOM, MAX_ZOOM, ZOOM_STEP
-} from './config.js?v=0.3.12';
+} from './config.js?v=0.3.15';
 
 function clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
 function round3(v) { return Math.round(v * 1000) / 1000; }
@@ -248,7 +248,6 @@ export function createRoiEditor(els, deps) {
   const { video, overlay, previewCanvas, previewPlaceholder } = els;
   const { camera } = deps;
   const overlayCtx = overlay.getContext('2d');
-  const previewCtx = previewCanvas.getContext('2d');
 
   let editable = false;      // 확대/이동 조작 가능 여부 (영역 버튼으로 켜고 끔)
   let drawQueued = false;    // 오버레이 다시 그리기 예약 여부
@@ -717,33 +716,8 @@ export function createRoiEditor(els, deps) {
       scheduleDraw();
     }
 
-    const k = deps.getKiln();
-    const reason = frameBlockReason(k, camera);
-    if (reason) {
-      previewCanvas.hidden = true;
-      previewPlaceholder.textContent = reason;
-      previewPlaceholder.hidden = false;
-      return;
-    }
-
-    // OCR과 같은 영역 (회전했으면 회전 보정한 이미지)
-    const src = kilnSourceRegion(k, vw, vh);
-
-    // 영역 비율을 유지한 채 확대
-    const scale = Math.min(PREVIEW_MAX_W / src.w, PREVIEW_MAX_H / src.h);
-    const outW = Math.max(1, Math.round(src.w * scale));
-    const outH = Math.max(1, Math.round(src.h * scale));
-
-    if (previewCanvas.width !== outW) previewCanvas.width = outW;
-    if (previewCanvas.height !== outH) previewCanvas.height = outH;
-    try {
-      previewCtx.imageSmoothingEnabled = true;
-      camera.drawRegion(previewCtx, src, outW, outH);
-    } catch (e) {
-      return; // 프레임이 아직 준비되지 않은 경우 다음 주기에 다시 시도
-    }
-    previewCanvas.hidden = false;
-    previewPlaceholder.hidden = true;
+    if (previewCanvas) previewCanvas.hidden = true;
+    if (previewPlaceholder) previewPlaceholder.hidden = true;
   }
 
   function bindEvents() {

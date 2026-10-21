@@ -8,14 +8,20 @@
   <meta name="format-detection" content="telephone=no">
   <title>가마 온도 기록</title>
   <!-- 파일을 바꿀 때마다 ?v= 값을 올려야 아이패드가 예전 파일을 캐시에서 쓰지 않음 (js의 import 경로와 config.js의 APP_VERSION도 같이) -->
-  <link rel="stylesheet" href="css/style.css?v=0.3.12">
+  <link rel="stylesheet" href="css/style.css?v=0.3.15">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.24/dist/uPlot.min.css">
   <!-- 숫자 인식 엔진 Tesseract.js (버전 고정, config.js의 TESSERACT_* 경로와 같은 버전). 이미지는 브라우저 안에서만 처리 -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@7.0.0/dist/tesseract.min.js" integrity="sha384-2BQ3U3OdKOb0Uczxqr41I9UvZkzr4V9Hv8uSzMMZAlmhsFClvdZX5wi5fDCzG+tM" crossorigin="anonymous" async></script>
   <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.24/dist/uPlot.iife.min.js"></script>
-  <script type="module" src="js/main.js?v=0.3.12"></script>
+  <script type="module" src="js/main.js?v=0.3.15"></script>
 </head>
 <body>
+  <div id="verifyNotice" class="verify-notice" hidden role="status" aria-live="polite">
+    <div class="verify-notice-card">
+      <span class="spinner" aria-hidden="true"></span>
+      <p id="verifyNoticeText">온도를 확인하고 있습니다</p>
+    </div>
+  </div>
   <div id="readyDialog" class="ready-dialog" hidden>
     <div class="ready-dialog-card" role="dialog" aria-modal="true" aria-labelledby="readyDialogTitle">
       <h2 id="readyDialogTitle">인식 준비 완료</h2>
@@ -50,6 +56,9 @@
             <video id="video" playsinline webkit-playsinline muted autoplay></video>
             <canvas id="overlay" class="readonly"></canvas>
             <div id="videoPlaceholder" class="placeholder">카메라 꺼짐</div>
+            <div id="cameraTemp" class="camera-temp" hidden aria-live="polite">
+              <span id="cameraTempValue" class="camera-temp-value is-empty">—</span><span class="camera-temp-unit">°C</span>
+            </div>
           </div>
           <!-- 확대/이동 보조 조작 (영역 지정 모드에서만 표시) -->
           <div id="zoomBar" class="zoom-bar" hidden>
@@ -86,7 +95,7 @@
             <figure><figcaption>OCR 입력 이미지</figcaption><canvas id="debugInputCanvas"></canvas></figure>
           </div>
           <p id="roiHint" class="roi-hint">온도 숫자 전체가 노란 네모 안에 들어오게 맞추세요. 프로그램 번호, 시간, 목표 온도는 함께 넣지 마세요.</p>
-          <div class="preview-box">
+          <div class="preview-box" hidden>
             <canvas id="previewCanvas" hidden></canvas>
             <div id="previewPlaceholder" class="placeholder"></div>
           </div>
@@ -155,8 +164,8 @@
           </div>
         </section>
 
-        <!-- 현재 인식값 -->
-        <section class="card reading-card" aria-live="off">
+        <!-- 인식 상세는 화면에 보이지 않는다. 온도는 카메라 위에만 표시한다. -->
+        <section class="card reading-card" hidden aria-live="off">
           <div class="reading-row">
             <div class="reading-block">
               <span class="reading-label">OCR 인식값</span>

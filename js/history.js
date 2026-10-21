@@ -1,7 +1,7 @@
 // ===== 기록 보기 (Phase 5) =====
 
-import * as db from './db.js?v=0.3.12';
-import { createTempChart } from './chart.js?v=0.3.12';
+import * as db from './db.js?v=0.3.15';
+import { createTempChart } from './chart.js?v=0.3.15';
 
 /**
  * @param {{ listEl: HTMLElement, listCard: HTMLElement, detailSection: HTMLElement, ...detailElements }} els

@@ -206,6 +206,38 @@ select { -webkit-appearance: none; appearance: none; padding-right: clamp(36px, 
 }
 .card-head h2 { margin: 0; }
 .head-actions { display: flex; gap: clamp(6px, 1vw, 8px); }
+.verify-notice {
+  position: fixed;
+  z-index: 30;
+  left: 50%;
+  top: max(12px, env(safe-area-inset-top));
+  transform: translateX(-50%);
+  width: min(420px, calc(100% - 24px));
+  pointer-events: none;
+}
+.verify-notice[hidden] { display: none; }
+.verify-notice-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--card);
+  color: var(--text);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+.verify-notice-card p { margin: 0; font-weight: 600; line-height: 1.4; }
+.spinner {
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border: 3px solid var(--border);
+  border-top-color: var(--primary);
+  border-radius: 50%;
+  animation: verify-spin 0.8s linear infinite;
+}
+@keyframes verify-spin { to { transform: rotate(360deg); } }
 .ready-dialog {
   position: fixed;
   inset: 0;
@@ -919,6 +951,36 @@ select { -webkit-appearance: none; appearance: none; padding-right: clamp(36px, 
   word-break: break-all;
 }
 
+.camera-temp[hidden] { display: none; }
+.camera-temp {
+  position: absolute;
+  z-index: 4;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: baseline;
+  max-width: calc(100% - 20px);
+  padding: 6px 16px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  pointer-events: none;
+  font-variant-numeric: tabular-nums;
+}
+.camera-temp-value {
+  font-size: clamp(28px, 5vw, 44px);
+  font-weight: 700;
+  line-height: 1;
+}
+.camera-temp-value.is-empty { opacity: 0.55; }
+.camera-temp-unit {
+  margin-left: 4px;
+  font-size: clamp(14px, 2.2vw, 18px);
+  font-weight: 600;
+  opacity: 0.85;
+}
+.camera-temp.is-warning { color: #ffb020; }
 .placeholder {
   position: absolute;
   inset: 0;
@@ -934,6 +996,7 @@ select { -webkit-appearance: none; appearance: none; padding-right: clamp(36px, 
 }
 
 /* ===== 영역 확대 미리보기 ===== */
+.preview-box[hidden] { display: none; }
 .preview-box {
   position: relative;
   display: flex;

@@ -7,7 +7,7 @@
 import {
   TEMP_MIN, TEMP_MAX, VALID_RATE_DEG_PER_SEC, VALID_MIN_DELTA, VALID_MAX_DELTA,
   VALID_INIT_CONFIRM_COUNT, VALID_RECHECK_COUNT, VALID_CANDIDATE_TOLERANCE, VALID_HISTORY_SIZE
-} from './config.js?v=0.3.12';
+} from './config.js?v=0.3.15';
 
 /**
  * 검증 상태 (phase)
@@ -74,14 +74,11 @@ export function validateReading(prev, input) {
     const last = run[run.length - 1];
     run = (last && Math.abs(raw - last.temp) <= allowedDelta(at - last.at)) ? run.concat([{ temp: raw, at }]) : [{ temp: raw, at }];
     if (run.length >= VALID_INIT_CONFIRM_COUNT) {
-      // 같은 값이 이어져 기준은 잡히지만, 그 값 자체가 맞다는 뜻은 아니다.
-      // 이번 판독은 확정 온도로 넘기지 않고, 다음 판독이 기준 안에 들어오면 시간 검증을 통과시킨다.
       phase = 'normal';
       baseline = { temp: raw, at };
       run = [];
-      status = 'initializing';
-      validatedTemp = null;
-      reason = '기준 온도를 잡았습니다 (' + raw + '°C). 다음 판독이 이어지면 시간 검증을 통과합니다. 이 값은 아직 확정 온도가 아닙니다.';
+      status = 'normal';
+      validatedTemp = raw;
     } else {
       status = 'initializing';
       reason = '기준 온도 확인 중 (' + run.length + '/' + VALID_INIT_CONFIRM_COUNT + '회 일치)';
