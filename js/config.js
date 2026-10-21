@@ -1,6 +1,6 @@
 // ===== 앱 전체에서 쓰는 상수 =====
 
-export const APP_VERSION = 'v0.3.15';
+export const APP_VERSION = 'v0.3.16';
 
 // ===== 저장소 =====
 export const DB_NAME = 'kiln-recorder';

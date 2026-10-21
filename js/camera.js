@@ -1,8 +1,8 @@
 // ===== 카메라 =====
 // 후면 카메라 스트림 시작/중지, 영상 프레임에서 원하는 영역을 잘라내기
 
-import { CAMERA_IDEAL_W, CAMERA_IDEAL_H } from './config.js?v=0.3.15';
-import { markTiming } from './timings.js?v=0.3.15';
+import { CAMERA_IDEAL_W, CAMERA_IDEAL_H } from './config.js?v=0.3.16';
+import { markTiming } from './timings.js?v=0.3.16';
 
 const PERMISSION_ERRORS = ['NotAllowedError', 'PermissionDeniedError', 'SecurityError'];
 
@@ -181,6 +181,43 @@ export function createCamera(els, hooks) {
     return { width: video.videoWidth, height: video.videoHeight };
   }
 
+  function videoTrack() {
+    if (!stream) return null;
+    const tracks = stream.getVideoTracks();
+    return tracks.length ? tracks[0] : null;
+  }
+
+  // 기기가 알려 주는 카메라 확대 범위. 없으면 null (화면 확대만 사용)
+  function zoomCapability() {
+    const track = videoTrack();
+    if (!track || typeof track.getCapabilities !== 'function') return null;
+    let caps = null;
+    try { caps = track.getCapabilities(); } catch (e) { return null; }
+    const z = caps && caps.zoom;
+    if (!z || typeof z.min !== 'number' || typeof z.max !== 'number' || !(z.max > z.min)) return null;
+    const step = typeof z.step === 'number' && z.step > 0 ? z.step : 0.1;
+    return { min: z.min, max: z.max, step };
+  }
+
+  function currentZoom() {
+    const settings = trackSettings();
+    return settings && typeof settings.zoom === 'number' ? settings.zoom : null;
+  }
+
+  // value가 없으면 기기 최소 배율(보통 1배)로 둔다. 범위 밖은 기기 한계로 맞춘다.
+  function applyZoom(value) {
+    const track = videoTrack();
+    const cap = zoomCapability();
+    if (!track || !cap || typeof track.applyConstraints !== 'function') return Promise.resolve(null);
+    const want = value == null || !isFinite(value) ? cap.min : Math.min(cap.max, Math.max(cap.min, value));
+    const now = currentZoom();
+    if (now != null && Math.abs(now - want) < cap.step / 2) return Promise.resolve(now);
+    return track.applyConstraints({ advanced: [{ zoom: want }] }).then(() => {
+      const applied = currentZoom();
+      return applied == null ? want : applied;
+    }).catch(() => null);
+  }
+
   // 카메라가 실제로 준 설정 (해상도, 프레임 속도). 확인할 수 없으면 null
   function trackSettings() {
     if (!stream) return null;
@@ -236,6 +273,7 @@ export function createCamera(els, hooks) {
   }
 
   return {
-    start, stop, isRunning, videoSize, trackSettings, isFrameReady, resumeIfPaused, drawRegion, grabRegion
+    start, stop, isRunning, videoSize, trackSettings, isFrameReady, resumeIfPaused, drawRegion, grabRegion,
+    zoomCapability, currentZoom, applyZoom
   };
 }

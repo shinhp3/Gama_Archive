@@ -1,20 +1,20 @@
 // ===== 진입점 =====
 // 화면 요소를 찾아 각 모듈을 연결하고, 탭 전환과 이벤트 처리를 담당
 
-import { APP_VERSION, PREVIEW_INTERVAL_MS, LIVE_READ_MS, CAMERA_IDEAL_W, CAMERA_IDEAL_H, OCR_LOCK_REVISION } from './config.js?v=0.3.15';
-import { initDb } from './db.js?v=0.3.15';
-import { createCamera } from './camera.js?v=0.3.15';
-import { createRoiEditor, kilnSourceRegion, frameAspectRelation } from './roi.js?v=0.3.15';
-import { markTiming, timingText } from './timings.js?v=0.3.15';
-import { createKilnManager } from './kilns.js?v=0.3.15';
-import { createReader, createLiveDisplay, recognitionMode, isRecognitionReady } from './reading.js?v=0.3.15';
-import { formatTemp } from './ocr.js?v=0.3.15';
-import { createOcrEngine } from './ocr.js?v=0.3.15';
-import { createOcrPreprocessor } from './ocrPreprocess.js?v=0.3.15';
-import { createCalibrationPanel } from './calibration.js?v=0.3.15';
-import { segmentQuads } from './recognizer.js?v=0.3.15';
-import { createRecorder } from './recorder.js?v=0.3.15';
-import { createHistoryView } from './history.js?v=0.3.15';
+import { APP_VERSION, PREVIEW_INTERVAL_MS, LIVE_READ_MS, CAMERA_IDEAL_W, CAMERA_IDEAL_H, OCR_LOCK_REVISION } from './config.js?v=0.3.16';
+import { initDb } from './db.js?v=0.3.16';
+import { createCamera } from './camera.js?v=0.3.16';
+import { createRoiEditor, kilnSourceRegion, frameAspectRelation } from './roi.js?v=0.3.16';
+import { markTiming, timingText } from './timings.js?v=0.3.16';
+import { createKilnManager } from './kilns.js?v=0.3.16';
+import { createReader, createLiveDisplay, recognitionMode, isRecognitionReady } from './reading.js?v=0.3.16';
+import { formatTemp } from './ocr.js?v=0.3.16';
+import { createOcrEngine } from './ocr.js?v=0.3.16';
+import { createOcrPreprocessor } from './ocrPreprocess.js?v=0.3.16';
+import { createCalibrationPanel } from './calibration.js?v=0.3.16';
+import { segmentQuads } from './recognizer.js?v=0.3.16';
+import { createRecorder } from './recorder.js?v=0.3.16';
+import { createHistoryView } from './history.js?v=0.3.16';
 
 const TABS = ['record', 'history'];
 
@@ -59,6 +59,9 @@ function getElements() {
     videoPlaceholder: $('videoPlaceholder'),
     previewCanvas: $('previewCanvas'),
     previewPlaceholder: $('previewPlaceholder'),
+    cameraZoomBar: $('cameraZoomBar'),
+    cameraZoomInput: $('cameraZoomInput'),
+    cameraZoomValue: $('cameraZoomValue'),
     zoomBar: $('zoomBar'),
     zoomInput: $('zoomInput'),
     zoomValue: $('zoomValue'),
@@ -320,6 +323,42 @@ function startApp() {
       els.recordElapsed.textContent = '—';
       els.startFiringBtn.disabled = !canStartFiring();
     }
+    syncCameraZoomBar();
+  }
+
+  function formatCameraZoom(value, step) {
+    const digits = step >= 1 ? 0 : (step >= 0.1 ? 1 : 2);
+    return value.toFixed(digits) + '×';
+  }
+
+  function syncCameraZoomBar() {
+    if (!els.cameraZoomBar) return;
+    const cap = camera.zoomCapability();
+    const show = camera.isRunning() && !!cap;
+    els.cameraZoomBar.hidden = !show;
+    if (!show) return;
+    const input = els.cameraZoomInput;
+    input.min = String(cap.min);
+    input.max = String(cap.max);
+    input.step = String(cap.step);
+    input.disabled = recorder.isActive();
+    const now = camera.currentZoom();
+    const value = now == null ? cap.min : now;
+    input.value = String(value);
+    els.cameraZoomValue.textContent = formatCameraZoom(value, cap.step);
+  }
+
+  // 가마에 저장된 카메라 배율을 적용한다. 저장값이 없으면 기기 최소 배율.
+  function applyKilnZoom() {
+    if (!camera.isRunning()) {
+      syncCameraZoomBar();
+      return Promise.resolve(null);
+    }
+    const k = kilns.current();
+    const target = k && typeof k.cameraZoom === 'number' ? k.cameraZoom : null;
+    return camera.applyZoom(target).then(() => {
+      syncCameraZoomBar();
+    });
   }
 
   function updateElapsed() {
@@ -609,6 +648,7 @@ function startApp() {
       } else if (!roi.isEditable()) {
         hideMessage();
       }
+      if (camera.isRunning() && !recorder.isActive()) applyKilnZoom();
     }
     refreshCameraView();
   }
@@ -630,6 +670,7 @@ function startApp() {
     updateFiringState(recorder.state());
     roi.scheduleDraw();
     updateVerifyNotice();
+    applyKilnZoom();
   }
 
   function stopCamera() {
@@ -640,6 +681,7 @@ function startApp() {
     roi.cancelGesture();
     updateRoiButton();
     updateStartButton(); // 소성 시작 버튼 상태 갱신
+    syncCameraZoomBar();
     refreshCameraView();
   }
 
@@ -675,6 +717,30 @@ function startApp() {
 
     // 영역 지정(영상 확대/이동) 모드 켜기/끄기
     els.roiEditBtn.addEventListener('click', () => setRoiEditing(!roi.isEditable()));
+
+    if (els.cameraZoomInput) {
+      els.cameraZoomInput.addEventListener('input', () => {
+        if (recorder.isActive()) return;
+        const raw = parseFloat(els.cameraZoomInput.value);
+        camera.applyZoom(raw).then((applied) => {
+          if (applied == null) return;
+          const cap = camera.zoomCapability();
+          els.cameraZoomValue.textContent = formatCameraZoom(applied, cap ? cap.step : 0.1);
+          if (kilns.current()) kilns.update({ cameraZoom: Math.round(applied * 100) / 100 }, true);
+        });
+      });
+      els.cameraZoomInput.addEventListener('change', () => {
+        if (recorder.isActive()) {
+          syncCameraZoomBar();
+          return;
+        }
+        clearRecognitionReady();
+        reader.invalidate();
+        readNow();
+        const k = kilns.current();
+        if (k && k.roi) showMessage('카메라 확대가 바뀌었습니다. 노란 네모가 숫자와 맞는지 확인하세요.', 'ok');
+      });
+    }
     
     // 소성 시작/종료 (Phase 3)
     els.startFiringBtn.addEventListener('click', async () => {
@@ -713,6 +779,8 @@ function startApp() {
       els.video.addEventListener(ev, () => {
         noteFrameSize();
         refreshCameraView();
+        // 일부 기기는 재생이 시작된 뒤에야 카메라 확대 범위를 알려 준다.
+        if (ev !== 'resize' && els.cameraZoomBar && els.cameraZoomBar.hidden) applyKilnZoom();
       });
     });
 

@@ -11,11 +11,11 @@ import {
   MIN_GUIDE_ASPECT, MAX_GUIDE_ASPECT,
   RECOGNITION_MODES, DEFAULT_RECOGNITION_MODE, OCR_PREPROCESS_OPTIONS, OCR_VARIANTS, DEFAULT_OCR_PREPROCESS,
   OCR_LOCK_REVISION
-} from './config.js?v=0.3.15';
+} from './config.js?v=0.3.16';
 import {
   getKilns, putKiln, deleteKiln, getPref, setPref, removePref,
   readLegacyKilns, clearLegacyKilns
-} from './db.js?v=0.3.15';
+} from './db.js?v=0.3.16';
 
 const SAVE_DELAY_MS = 400; // 슬라이더처럼 값이 연속으로 바뀔 때 모았다가 저장하는 시간
 
@@ -57,6 +57,12 @@ function copyRoi(r) {
 }
 
 // 확대/이동 상태 { zoom, cx, cy } (중심은 원본 프레임 비율)
+function cameraZoomOf(v) {
+  const n = typeof v === 'number' ? v : parseFloat(v);
+  if (!isFinite(n) || n <= 0 || n > 20) return null;
+  return Math.round(n * 100) / 100;
+}
+
 function copyView(v) {
   if (!v || typeof v !== 'object') return null;
   if (!isNum(v.zoom) || !isNum(v.cx) || !isNum(v.cy)) return null;
@@ -77,6 +83,8 @@ export function sanitizeKiln(raw) {
     // 방향별로 저장하던 버전(roiLandscape/roiPortrait)의 영역도 하나로 이어받음
     roi: copyRoi(raw.roi) || copyRoi(raw.roiLandscape) || copyRoi(raw.roiPortrait),
     view: copyView(raw.view),
+    // 기기 카메라 확대. 지원하지 않는 기기·이전 가마는 null (열면 최소 배율)
+    cameraZoom: cameraZoomOf(raw.cameraZoom),
     digits,
     digitAspect: numInRange(raw.digitAspect, MIN_DIGIT_ASPECT, MAX_DIGIT_ASPECT, DEFAULT_DIGIT_ASPECT),
     // 노란 틀 폭 (영상 영역 폭 대비). 저장되지 않은 이전 가마는 기본값

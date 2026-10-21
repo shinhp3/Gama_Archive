@@ -8,12 +8,12 @@
   <meta name="format-detection" content="telephone=no">
   <title>가마 온도 기록</title>
   <!-- 파일을 바꿀 때마다 ?v= 값을 올려야 아이패드가 예전 파일을 캐시에서 쓰지 않음 (js의 import 경로와 config.js의 APP_VERSION도 같이) -->
-  <link rel="stylesheet" href="css/style.css?v=0.3.15">
+  <link rel="stylesheet" href="css/style.css?v=0.3.16">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.24/dist/uPlot.min.css">
   <!-- 숫자 인식 엔진 Tesseract.js (버전 고정, config.js의 TESSERACT_* 경로와 같은 버전). 이미지는 브라우저 안에서만 처리 -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@7.0.0/dist/tesseract.min.js" integrity="sha384-2BQ3U3OdKOb0Uczxqr41I9UvZkzr4V9Hv8uSzMMZAlmhsFClvdZX5wi5fDCzG+tM" crossorigin="anonymous" async></script>
   <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.24/dist/uPlot.iife.min.js"></script>
-  <script type="module" src="js/main.js?v=0.3.15"></script>
+  <script type="module" src="js/main.js?v=0.3.16"></script>
 </head>
 <body>
   <div id="verifyNotice" class="verify-notice" hidden role="status" aria-live="polite">
@@ -59,6 +59,12 @@
             <div id="cameraTemp" class="camera-temp" hidden aria-live="polite">
               <span id="cameraTempValue" class="camera-temp-value is-empty">—</span><span class="camera-temp-unit">°C</span>
             </div>
+          </div>
+          <!-- 기기 카메라 확대. 브라우저가 줌을 알려 줄 때만 표시. 화면 확대와 별개 -->
+          <div id="cameraZoomBar" class="zoom-bar" hidden>
+            <label for="cameraZoomInput" class="guide-label">카메라 확대</label>
+            <input id="cameraZoomInput" type="range" aria-label="카메라 확대">
+            <output id="cameraZoomValue" class="zoom-value">1×</output>
           </div>
           <!-- 확대/이동 보조 조작 (영역 지정 모드에서만 표시) -->
           <div id="zoomBar" class="zoom-bar" hidden>
@@ -325,6 +331,7 @@
             <li>창 크기를 바꾸거나 기기를 돌려도 저장한 영역은 유지됩니다. 카메라 원본 비율을 맞출 수 없을 때만 다시 확인하면 됩니다.</li>
             <li>가마의 열기가 닿지 않도록 기기를 충분히 떨어뜨려 두세요.</li>
             <li>노란 네모 안에는 현재 온도 숫자만 넣으세요. 자릿수에 맞춰 나누지 않아도 됩니다.</li>
+            <li>기기가 카메라 확대를 지원하면 조절이 나타납니다. 배율을 바꾼 뒤에는 노란 네모가 숫자와 맞는지 확인하세요. 소성 중에는 바꿀 수 없습니다.</li>
           </ul>
         </details>
       </div>
