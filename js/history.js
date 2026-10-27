@@ -1,7 +1,7 @@
 // ===== 기록 보기 (Phase 5) =====
 
-import * as db from './db.js?v=0.3.16';
-import { createTempChart } from './chart.js?v=0.3.16';
+import * as db from './db.js?v=0.3.20';
+import { createTempChart } from './chart.js?v=0.3.20';
 
 /**
  * @param {{ listEl: HTMLElement, listCard: HTMLElement, detailSection: HTMLElement, ...detailElements }} els
@@ -20,11 +20,67 @@ export function createHistoryView(els) {
     detailReadingCount,
     chartContainer,
     readingsTable,
-    deleteFiringBtn
+    deleteFiringBtn,
+    intervalBar
   } = els;
 
   let currentFiring = null;
+  let currentReadings = [];
   let currentChart = null;
+  let intervalMinutes = 30;
+
+  function median(nums) {
+    if (!nums.length) return null;
+    const sorted = nums.slice().sort((a, b) => a - b);
+    const mid = sorted.length >> 1;
+    if (sorted.length % 2 === 1) return sorted[mid];
+    return (sorted[mid - 1] + sorted[mid]) / 2;
+  }
+
+  function formatClock(min) {
+    const whole = Math.round(min);
+    if (whole < 60) return whole + '분';
+    const hours = Math.floor(whole / 60);
+    const minutes = whole % 60;
+    return minutes ? hours + '시간 ' + minutes + '분' : hours + '시간';
+  }
+
+  function formatBucketTemp(temp) {
+    if (typeof temp !== 'number') return '—';
+    const rounded = Math.round(temp * 10) / 10;
+    return (Math.abs(rounded - Math.round(rounded)) < 0.05 ? String(Math.round(rounded)) : rounded.toFixed(1)) + '°C';
+  }
+
+  // stepMin 간격으로 모아 각 구간의 온도 중앙값을 만든다. 저장값 자체는 바꾸지 않는다.
+  function bucketReadings(readings, startedAt, stepMin) {
+    const groups = new Map();
+    readings.forEach((r) => {
+      const elapsed = Math.max(0, (r.ts - startedAt) / 60000);
+      const index = Math.floor(elapsed / stepMin);
+      if (!groups.has(index)) groups.set(index, []);
+      groups.get(index).push({ reading: r, elapsed });
+    });
+    return Array.from(groups.keys()).sort((a, b) => a - b).map((index) => {
+      const items = groups.get(index);
+      const temps = items.map((item) => item.reading.temp).filter((t) => typeof t === 'number');
+      const lastElapsed = items.reduce((max, item) => Math.max(max, item.elapsed), 0);
+      return {
+        startMin: index * stepMin,
+        endMin: (index + 1) * stepMin,
+        lastElapsed,
+        temp: median(temps),
+        count: items.length,
+        ts: startedAt + lastElapsed * 60000
+      };
+    });
+  }
+
+  function setIntervalPressed(minutes) {
+    if (!intervalBar) return;
+    intervalBar.querySelectorAll('button').forEach((btn) => {
+      btn.setAttribute('aria-pressed', String(Number(btn.dataset.minutes) === minutes));
+    });
+  }
 
   // 소성 목록 표시
   async function loadList() {
@@ -129,6 +185,9 @@ export function createHistoryView(els) {
       
       currentFiring = firing;
       const readings = await db.getReadings(firingId);
+      currentReadings = readings;
+      intervalMinutes = readings.length > 60 ? 30 : 1;
+      setIntervalPressed(intervalMinutes);
       
       // 정보 표시
       detailKilnName.textContent = firing.kilnName;
@@ -146,25 +205,47 @@ export function createHistoryView(els) {
       const maxTemp = temps.length > 0 ? Math.max(...temps) : null;
       detailMaxTemp.textContent = maxTemp !== null ? maxTemp + '°C' : '—';
       detailReadingCount.textContent = readings.length + '개';
+      renderSeries();
       
-      // 그래프
-      if (currentChart) {
-        currentChart.cleanup();
-        currentChart = null;
-      }
+      // 화면 전환
+      console.log('[History] 화면 전환 시작');
+      console.log('[History] listCard:', listCard);
+      console.log('[History] detailSection:', detailSection);
       
-      chartContainer.innerHTML = '';
-      if (readings.length === 0) {
-        chartContainer.innerHTML = '<p class="muted">온도 기록이 없습니다.</p>';
-      } else {
-        currentChart = createTempChart(chartContainer, readings, firing.startedAt);
-      }
+      listCard.hidden = true;
+      detailSection.hidden = false;
       
-      // 테이블
-      if (readings.length === 0) {
-        readingsTable.innerHTML = '<p class="muted">온도 기록이 없습니다.</p>';
-      } else {
-        const rows = readings.map((r, i) => {
+      console.log('[History] 화면 전환 완료');
+      
+    } catch (err) {
+      console.error('[History] 상세 보기 로드 실패:', err);
+      alert('상세 정보를 불러오지 못했습니다: ' + err.message);
+    }
+  }
+
+  function renderSeries() {
+    const firing = currentFiring;
+    const readings = currentReadings;
+    if (!firing) return;
+
+    if (currentChart) {
+      currentChart.cleanup();
+      currentChart = null;
+    }
+    chartContainer.innerHTML = '';
+
+    if (readings.length === 0) {
+      chartContainer.innerHTML = '<p class="muted">온도 기록이 없습니다.</p>';
+      readingsTable.innerHTML = '<p class="muted">온도 기록이 없습니다.</p>';
+      return;
+    }
+
+    if (intervalMinutes <= 1) {
+      detailReadingCount.textContent = readings.length + '개';
+      currentChart = createTempChart(chartContainer, readings, firing.startedAt, {
+        showPoints: readings.length <= 80
+      });
+      const rows = readings.map((r, i) => {
           const time = new Date(r.ts).toLocaleTimeString('ko-KR');
           const elapsed = Math.floor((r.ts - firing.startedAt) / 60000);
           const temp = r.temp !== null ? r.temp + '°C' : '—';
@@ -173,7 +254,7 @@ export function createHistoryView(els) {
           const edited = r.edited ? '✏️' : '';
           
           return `
-            <tr>
+            <tr data-index="${i}" tabindex="0">
               <td>${i + 1}</td>
               <td>${elapsed}분</td>
               <td>${time}</td>
@@ -201,31 +282,63 @@ export function createHistoryView(els) {
             </tbody>
           </table>
         `;
-      }
-      
-      // 화면 전환
-      console.log('[History] 화면 전환 시작');
-      console.log('[History] listCard:', listCard);
-      console.log('[History] detailSection:', detailSection);
-      
-      listCard.hidden = true;
-      detailSection.hidden = false;
-      
-      console.log('[History] 화면 전환 완료');
-      
-    } catch (err) {
-      console.error('[History] 상세 보기 로드 실패:', err);
-      alert('상세 정보를 불러오지 못했습니다: ' + err.message);
+      return;
     }
+
+    const buckets = bucketReadings(readings, firing.startedAt, intervalMinutes);
+    detailReadingCount.textContent = readings.length + '개 · ' + buckets.length + '칸';
+    currentChart = createTempChart(chartContainer, buckets.map((b) => ({
+      ts: b.ts,
+      temp: b.temp
+    })), firing.startedAt, { showPoints: true });
+    const rows = buckets.map((b, i) => `
+      <tr data-index="${i}" tabindex="0">
+        <td>${i + 1}</td>
+        <td>${formatClock(b.startMin)}–${formatClock(b.endMin)}</td>
+        <td>${formatBucketTemp(b.temp)}</td>
+        <td>${b.count}개</td>
+      </tr>
+    `).join('');
+    readingsTable.innerHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>구간</th>
+            <th>온도</th>
+            <th>포함 기록</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rows}
+        </tbody>
+      </table>
+    `;
   }
 
-  // 목록으로 돌아가기
+  function selectReading(index) {
+    if (!currentChart || typeof currentChart.focusIndex !== 'function' || !Number.isInteger(index)) return;
+    readingsTable.querySelectorAll('tbody tr').forEach((tr) => {
+      tr.classList.toggle('is-selected', Number(tr.dataset.index) === index);
+    });
+    currentChart.focusIndex(index);
+    chartContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }
+
+  function readingFromEvent(e) {
+    const row = e.target.closest('tbody tr');
+    if (!row || !readingsTable.contains(row)) return null;
+    const index = Number(row.dataset.index);
+    return Number.isInteger(index) ? index : null;
+  }
+
   function backToList() {
     if (currentChart) {
       currentChart.cleanup();
       currentChart = null;
     }
     currentFiring = null;
+    currentReadings = [];
     detailSection.hidden = true;
     listCard.hidden = false;
     loadList();
@@ -252,8 +365,32 @@ export function createHistoryView(els) {
   // 이벤트 리스너
   backToListBtn.addEventListener('click', backToList);
   deleteFiringBtn.addEventListener('click', deleteFiring);
+  if (intervalBar) {
+    intervalBar.addEventListener('click', (e) => {
+      const btn = e.target.closest('button');
+      if (!btn || !currentFiring) return;
+      const minutes = Number(btn.dataset.minutes);
+      if (!minutes || minutes === intervalMinutes) return;
+      intervalMinutes = minutes;
+      setIntervalPressed(minutes);
+      renderSeries();
+    });
+  }
+  readingsTable.addEventListener('click', (e) => {
+    const index = readingFromEvent(e);
+    if (index == null) return;
+    selectReading(index);
+  });
+  readingsTable.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const index = readingFromEvent(e);
+    if (index == null) return;
+    e.preventDefault();
+    selectReading(index);
+  });
 
   return {
-    loadList
+    loadList,
+    redraw: () => { if (currentFiring) renderSeries(); }
   };
 }

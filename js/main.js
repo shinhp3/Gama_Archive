@@ -1,20 +1,20 @@
 // ===== 진입점 =====
 // 화면 요소를 찾아 각 모듈을 연결하고, 탭 전환과 이벤트 처리를 담당
 
-import { APP_VERSION, PREVIEW_INTERVAL_MS, LIVE_READ_MS, CAMERA_IDEAL_W, CAMERA_IDEAL_H, OCR_LOCK_REVISION } from './config.js?v=0.3.16';
-import { initDb } from './db.js?v=0.3.16';
-import { createCamera } from './camera.js?v=0.3.16';
-import { createRoiEditor, kilnSourceRegion, frameAspectRelation } from './roi.js?v=0.3.16';
-import { markTiming, timingText } from './timings.js?v=0.3.16';
-import { createKilnManager } from './kilns.js?v=0.3.16';
-import { createReader, createLiveDisplay, recognitionMode, isRecognitionReady } from './reading.js?v=0.3.16';
-import { formatTemp } from './ocr.js?v=0.3.16';
-import { createOcrEngine } from './ocr.js?v=0.3.16';
-import { createOcrPreprocessor } from './ocrPreprocess.js?v=0.3.16';
-import { createCalibrationPanel } from './calibration.js?v=0.3.16';
-import { segmentQuads } from './recognizer.js?v=0.3.16';
-import { createRecorder } from './recorder.js?v=0.3.16';
-import { createHistoryView } from './history.js?v=0.3.16';
+import { APP_VERSION, PREVIEW_INTERVAL_MS, LIVE_READ_MS, CAMERA_IDEAL_W, CAMERA_IDEAL_H, OCR_LOCK_REVISION } from './config.js?v=0.3.20';
+import { initDb } from './db.js?v=0.3.20';
+import { createCamera } from './camera.js?v=0.3.20';
+import { createRoiEditor, kilnSourceRegion, frameAspectRelation } from './roi.js?v=0.3.20';
+import { markTiming, timingText } from './timings.js?v=0.3.20';
+import { createKilnManager } from './kilns.js?v=0.3.20';
+import { createReader, createLiveDisplay, recognitionMode, isRecognitionReady } from './reading.js?v=0.3.20';
+import { formatTemp } from './ocr.js?v=0.3.20';
+import { createOcrEngine } from './ocr.js?v=0.3.20';
+import { createOcrPreprocessor } from './ocrPreprocess.js?v=0.3.20';
+import { createCalibrationPanel } from './calibration.js?v=0.3.20';
+import { segmentQuads } from './recognizer.js?v=0.3.20';
+import { createRecorder } from './recorder.js?v=0.3.20';
+import { createHistoryView } from './history.js?v=0.3.20';
 
 const TABS = ['record', 'history'];
 
@@ -45,6 +45,7 @@ function getElements() {
     detailReadingCount: $('detailReadingCount'),
     chartContainer: $('chartContainer'),
     readingsTable: $('readingsTable'),
+    intervalBar: $('intervalBar'),
     deleteFiringBtn: $('deleteFiringBtn'),
     roiEditBtn: $('roiEditBtn'),
     cameraBtn: $('cameraBtn'),
@@ -113,8 +114,6 @@ function getElements() {
     firingStartTime: $('firingStartTime'),
     firingElapsed: $('firingElapsed'),
     lastRecordTime: $('lastRecordTime'),
-    readingCount: $('readingCount'),
-    lastReading: $('lastReading'),
     recordState: $('recordState'),
     recordElapsed: $('recordElapsed'),
     calib: {
@@ -162,6 +161,7 @@ function getElements() {
       segOnInput: $('segOnInput'),
       segOnValue: $('segOnValue')
     },
+    themeBtn: $('themeBtn'),
     appVersion: $('appVersion')
   };
 }
@@ -307,15 +307,7 @@ function startApp() {
       } else {
         els.lastRecordTime.textContent = '아직 없음';
       }
-      
-      // 측정 횟수와 마지막 측정
-      els.readingCount.textContent = state.readingCount || 0;
-      if (state.lastReadingTemp !== undefined && state.lastReadingTemp !== null) {
-        els.lastReading.textContent = state.lastReadingTemp + '°C';
-      } else {
-        els.lastReading.textContent = '—';
-      }
-      
+
       // 버튼 상태
       els.startFiringBtn.disabled = true;
       updateRoiButton(); // ROI 버튼도 비활성화
@@ -572,7 +564,8 @@ function startApp() {
     detailReadingCount: els.detailReadingCount,
     chartContainer: els.chartContainer,
     readingsTable: els.readingsTable,
-    deleteFiringBtn: els.deleteFiringBtn
+    deleteFiringBtn: els.deleteFiringBtn,
+    intervalBar: els.intervalBar
   });
 
   // ===== 탭 전환 =====
@@ -693,6 +686,16 @@ function startApp() {
 
   // ===== 이벤트 연결 =====
   function bindEvents() {
+    applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light');
+    if (els.themeBtn) {
+      els.themeBtn.addEventListener('click', () => {
+        const next = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
+        try { localStorage.setItem(THEME_KEY, next); } catch (e) {}
+        applyTheme(next);
+        history.redraw();
+      });
+    }
+
     els.tabButtons.forEach((btn) => {
       btn.addEventListener('click', () => showTab(btn.dataset.tab));
     });
@@ -824,6 +827,17 @@ function startApp() {
   }
 
   // ===== 초기화 =====
+  const THEME_KEY = 'kilnRecorder.theme';
+  function applyTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.style.colorScheme = theme;
+    if (!els.themeBtn) return;
+    const dark = theme === 'dark';
+    els.themeBtn.textContent = dark ? '라이트' : '다크';
+    els.themeBtn.setAttribute('aria-label', dark ? '라이트 테마로 전환' : '다크 테마로 전환');
+    els.themeBtn.setAttribute('aria-pressed', dark ? 'true' : 'false');
+  }
+
   els.appVersion.textContent = APP_VERSION;
   bindEvents();
   showTab('record');

@@ -6,14 +6,24 @@
   <meta name="color-scheme" content="light dark">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="format-detection" content="telephone=no">
+  <script>
+    (function () {
+      var saved = null;
+      try { saved = localStorage.getItem('kilnRecorder.theme'); } catch (e) {}
+      var theme = saved === 'light' || saved === 'dark' ? saved
+        : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', theme);
+      document.documentElement.style.colorScheme = theme;
+    })();
+  </script>
   <title>가마 온도 기록</title>
   <!-- 파일을 바꿀 때마다 ?v= 값을 올려야 아이패드가 예전 파일을 캐시에서 쓰지 않음 (js의 import 경로와 config.js의 APP_VERSION도 같이) -->
-  <link rel="stylesheet" href="css/style.css?v=0.3.16">
+  <link rel="stylesheet" href="css/style.css?v=0.3.20">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.24/dist/uPlot.min.css">
   <!-- 숫자 인식 엔진 Tesseract.js (버전 고정, config.js의 TESSERACT_* 경로와 같은 버전). 이미지는 브라우저 안에서만 처리 -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@7.0.0/dist/tesseract.min.js" integrity="sha384-2BQ3U3OdKOb0Uczxqr41I9UvZkzr4V9Hv8uSzMMZAlmhsFClvdZX5wi5fDCzG+tM" crossorigin="anonymous" async></script>
   <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.24/dist/uPlot.iife.min.js"></script>
-  <script type="module" src="js/main.js?v=0.3.16"></script>
+  <script type="module" src="js/main.js?v=0.3.20"></script>
 </head>
 <body>
   <div id="verifyNotice" class="verify-notice" hidden role="status" aria-live="polite">
@@ -375,6 +385,13 @@
             <span id="detailReadingCount"></span>
           </div>
         </div>
+
+        <div id="intervalBar" class="interval-bar" role="group" aria-label="보기 간격">
+          <button type="button" data-minutes="1" aria-pressed="false">1분</button>
+          <button type="button" data-minutes="30" aria-pressed="true">30분</button>
+          <button type="button" data-minutes="60" aria-pressed="false">1시간</button>
+          <button type="button" data-minutes="120" aria-pressed="false">2시간</button>
+        </div>
         
         <!-- 그래프 영역 -->
         <div id="chartContainer" class="chart-container">
@@ -383,6 +400,7 @@
         
         <!-- 온도 데이터 테이블 -->
         <h3>온도 기록</h3>
+        <p class="field-note">표를 누르면 그래프에서 그 위치를 보여 줍니다.</p>
         <div id="readingsTable" class="readings-table"></div>
         
         <div class="detail-actions">
@@ -398,6 +416,7 @@
   <nav class="tabbar" aria-label="화면 전환">
     <button type="button" class="tab" data-tab="record" aria-current="page">기록</button>
     <button type="button" class="tab" data-tab="history">기록 보기</button>
+    <button id="themeBtn" type="button" class="theme-btn" aria-pressed="false">다크</button>
   </nav>
 </body>
 </html>
