@@ -1,21 +1,21 @@
 // ===== 진입점 =====
 // 화면 요소를 찾아 각 모듈을 연결하고, 탭 전환과 이벤트 처리를 담당
 
-import { APP_VERSION, PREVIEW_INTERVAL_MS, LIVE_READ_MS, CAMERA_IDEAL_W, CAMERA_IDEAL_H, OCR_LOCK_REVISION } from './config.js?v=0.3.28';
-import { initDb } from './db.js?v=0.3.28';
-import { createCamera } from './camera.js?v=0.3.28';
-import { createRoiEditor, kilnSourceRegion, frameAspectRelation } from './roi.js?v=0.3.28';
-import { markTiming, timingText } from './timings.js?v=0.3.28';
-import { createKilnManager } from './kilns.js?v=0.3.28';
-import { createReader, createLiveDisplay, recognitionMode, isRecognitionReady } from './reading.js?v=0.3.28';
-import { formatTemp } from './ocr.js?v=0.3.28';
-import { createOcrEngine } from './ocr.js?v=0.3.28';
-import { createOcrPreprocessor } from './ocrPreprocess.js?v=0.3.28';
-import { createCalibrationPanel } from './calibration.js?v=0.3.28';
-import { segmentQuads } from './recognizer.js?v=0.3.28';
-import { createRecorder } from './recorder.js?v=0.3.28';
-import { createHistoryView } from './history.js?v=0.3.28';
-import { exportArchive, parseArchive, importArchive } from './backup.js?v=0.3.28';
+import { APP_VERSION, PREVIEW_INTERVAL_MS, LIVE_READ_MS, CAMERA_IDEAL_W, CAMERA_IDEAL_H, OCR_LOCK_REVISION } from './config.js?v=0.3.30';
+import { initDb } from './db.js?v=0.3.30';
+import { createCamera } from './camera.js?v=0.3.30';
+import { createRoiEditor, kilnSourceRegion, frameAspectRelation } from './roi.js?v=0.3.30';
+import { markTiming, timingText } from './timings.js?v=0.3.30';
+import { createKilnManager } from './kilns.js?v=0.3.30';
+import { createReader, createLiveDisplay, recognitionMode, isRecognitionReady } from './reading.js?v=0.3.30';
+import { formatTemp } from './ocr.js?v=0.3.30';
+import { createOcrEngine } from './ocr.js?v=0.3.30';
+import { createOcrPreprocessor } from './ocrPreprocess.js?v=0.3.30';
+import { createCalibrationPanel } from './calibration.js?v=0.3.30';
+import { segmentQuads } from './recognizer.js?v=0.3.30';
+import { createRecorder } from './recorder.js?v=0.3.30';
+import { createHistoryView } from './history.js?v=0.3.30';
+import { exportArchive, parseArchive, importArchive } from './backup.js?v=0.3.30';
 
 const TABS = ['record', 'history'];
 
@@ -836,25 +836,107 @@ function startApp() {
     });
 
     if (els.exportBackupBtn) {
-      els.exportBackupBtn.addEventListener('click', () => {
-        exportArchive().then((archive) => {
-          const blob = new Blob([JSON.stringify(archive)], { type: 'application/json' });
-          const url = URL.createObjectURL(blob);
-          const link = document.createElement('a');
-          const now = new Date();
-          const stamp = now.getFullYear()
-            + String(now.getMonth() + 1).padStart(2, '0')
-            + String(now.getDate()).padStart(2, '0');
-          link.href = url;
-          link.download = 'gama-archive-' + stamp + '.json';
-          document.body.appendChild(link);
-          link.click();
-          link.remove();
-          setTimeout(() => URL.revokeObjectURL(url), 1500);
-          showMessage('기록 파일을 저장했습니다. 다른 브라우저에서는 이 파일을 불러오세요.', 'ok', 5000);
+      let exportUrl = '';
+      let exportFile = null;
+
+      function archiveFileName() {
+        const now = new Date();
+        return 'gama-archive-'
+          + now.getFullYear()
+          + String(now.getMonth() + 1).padStart(2, '0')
+          + String(now.getDate()).padStart(2, '0')
+          + '.json';
+      }
+
+      function clearPreparedExport() {
+        exportFile = null;
+        if (exportUrl) {
+          URL.revokeObjectURL(exportUrl);
+          exportUrl = '';
+        }
+        els.exportBackupBtn.textContent = '기록 파일로 저장';
+      }
+
+      function rememberExport(archive, name) {
+        const blob = new Blob([JSON.stringify(archive)], { type: 'application/json' });
+        exportFile = new File([blob], name, { type: 'application/json' });
+        if (exportUrl) URL.revokeObjectURL(exportUrl);
+        exportUrl = URL.createObjectURL(blob);
+        els.exportBackupBtn.textContent = '파일 저장하기';
+        showMessage('파일이 준비되었습니다. 파일 저장하기를 한 번 더 누르세요.', 'ok', 8000);
+      }
+
+      function prepareExport(name) {
+        showMessage('기록 파일을 만드는 중입니다.', 'info');
+        return exportArchive().then((archive) => {
+          rememberExport(archive, name);
         }).catch((err) => {
           showMessage(err && err.message ? err.message : '기록 파일을 만들지 못했습니다.', 'error');
         });
+      }
+
+      function deliverPreparedExport() {
+        const file = exportFile;
+        const button = els.exportBackupBtn;
+        const canShare = file && navigator.share && navigator.canShare && navigator.canShare({ files: [file] });
+        if (canShare) {
+          button.disabled = true;
+          navigator.share({ files: [file], title: file.name }).then(() => {
+            clearPreparedExport();
+            showMessage('기록 파일을 저장했습니다. 다른 브라우저에서는 이 파일을 불러오세요.', 'ok', 5000);
+          }).catch((err) => {
+            if (err && err.name === 'AbortError') return;
+            showMessage('파일을 저장하지 못했습니다. 파일 저장하기를 다시 눌러 주세요.', 'error');
+          }).then(() => { button.disabled = false; });
+          return;
+        }
+        const link = document.createElement('a');
+        const url = exportUrl;
+        link.href = url;
+        link.download = file.name;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        exportFile = null;
+        exportUrl = '';
+        els.exportBackupBtn.textContent = '기록 파일로 저장';
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+        showMessage('기록 파일을 저장했습니다. 다운로드 폴더에서 이 파일을 불러오세요.', 'ok', 5000);
+      }
+
+      els.exportBackupBtn.addEventListener('click', () => {
+        if (exportFile) {
+          deliverPreparedExport();
+          return;
+        }
+        const name = archiveFileName();
+        const button = els.exportBackupBtn;
+        button.disabled = true;
+        const done = () => { button.disabled = false; };
+        if (typeof window.showSaveFilePicker !== 'function') {
+          prepareExport(name).then(done, done);
+          return;
+        }
+        window.showSaveFilePicker({
+          suggestedName: name,
+          types: [{ description: '가마 기록', accept: { 'application/json': ['.json'] } }]
+        }).then((handle) => {
+          showMessage('기록 파일을 만드는 중입니다.', 'info');
+          return exportArchive().then((archive) => {
+            return handle.createWritable().then((writable) => {
+              return writable.write(JSON.stringify(archive)).then(() => writable.close());
+            });
+          });
+        }).then(() => {
+          clearPreparedExport();
+          showMessage('기록 파일을 저장했습니다. 고른 위치에서 다른 브라우저로 불러오세요.', 'ok', 5000);
+        }).catch((err) => {
+          if (err && err.name === 'AbortError') return;
+          if (err && (err.name === 'SecurityError' || err.name === 'NotAllowedError' || err.name === 'TypeError')) {
+            return prepareExport(name);
+          }
+          showMessage(err && err.message ? err.message : '기록 파일을 저장하지 못했습니다.', 'error');
+        }).then(done, done);
       });
     }
 

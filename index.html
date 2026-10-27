@@ -18,12 +18,12 @@
   </script>
   <title>가마 온도 기록</title>
   <!-- 파일을 바꿀 때마다 ?v= 값을 올려야 아이패드가 예전 파일을 캐시에서 쓰지 않음 (js의 import 경로와 config.js의 APP_VERSION도 같이) -->
-  <link rel="stylesheet" href="css/style.css?v=0.3.28">
+  <link rel="stylesheet" href="css/style.css?v=0.3.30">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.24/dist/uPlot.min.css">
   <!-- 숫자 인식 엔진 Tesseract.js (버전 고정, config.js의 TESSERACT_* 경로와 같은 버전). 이미지는 브라우저 안에서만 처리 -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@7.0.0/dist/tesseract.min.js" integrity="sha384-2BQ3U3OdKOb0Uczxqr41I9UvZkzr4V9Hv8uSzMMZAlmhsFClvdZX5wi5fDCzG+tM" crossorigin="anonymous" async></script>
   <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.24/dist/uPlot.iife.min.js"></script>
-  <script type="module" src="js/main.js?v=0.3.28"></script>
+  <script type="module" src="js/main.js?v=0.3.30"></script>
 </head>
 <body>
   <div id="verifyNotice" class="verify-notice" hidden role="status" aria-live="polite">
@@ -386,7 +386,7 @@
             <li>가마의 열기가 닿지 않도록 기기를 충분히 떨어뜨려 두세요.</li>
             <li>노란 네모 안에는 현재 온도 숫자만 넣으세요. 자릿수에 맞춰 나누지 않아도 됩니다.</li>
             <li>기기가 카메라 확대나 노출 보정을 지원하면 조절이 나타납니다. 낮에 빨간 숫자가 흐리면 노출을 조금 어둡게 맞추세요. 바꾼 뒤에는 노란 네모가 숫자와 맞는지 확인하세요. 소성 중에는 바꿀 수 없습니다.</li>
-            <li>기록은 측정할 때마다 이 브라우저에 바로 저장됩니다. 창을 닫아도 같은 브라우저, 같은 주소로 열면 다시 보입니다. 다른 브라우저에서 보려면 기록 보기에서 파일로 저장한 뒤, 그 브라우저에서 불러오세요.</li>
+            <li>기록은 측정할 때마다 이 브라우저에 바로 저장됩니다. 창을 닫아도 같은 브라우저, 같은 주소로 열면 다시 보입니다. 다른 브라우저에서 보려면 기록 보기에서 기록 파일로 저장을 누르고, 기기에 남길 위치를 고른 뒤 그 파일을 불러오세요.</li>
           </ul>
         </details>
       </div>
@@ -396,7 +396,7 @@
     <section id="viewHistory" class="view" hidden>
       <section class="card">
         <h2>소성 기록</h2>
-        <p class="field-note">같은 브라우저는 다시 열면 기록이 보입니다. 다른 브라우저에서 보려면 여기서 파일로 저장한 뒤, 그 브라우저에서 불러오세요.</p>
+        <p class="field-note">같은 브라우저는 다시 열면 기록이 보입니다. 다른 브라우저로 옮기려면 기록 파일로 저장을 누르고, 기기에 남길 위치를 고르세요.</p>
         <div class="btn-row backup-bar">
           <button id="exportBackupBtn" type="button">기록 파일로 저장</button>
           <button id="importBackupBtn" type="button">기록 불러오기</button>

@@ -2,8 +2,8 @@
 // 같은 브라우저는 저장소에 바로 남은 기록을 다시 연다.
 // 다른 브라우저는 파일로 저장한 뒤 그 파일을 불러온다.
 
-import * as db from './db.js?v=0.3.28';
-import { sanitizeKiln } from './kilns.js?v=0.3.28';
+import * as db from './db.js?v=0.3.30';
+import { sanitizeKiln } from './kilns.js?v=0.3.30';
 
 function sanitizeFiring(raw) {
   if (!raw || typeof raw.id !== 'string' || !raw.id) return null;

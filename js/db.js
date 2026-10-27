@@ -1,7 +1,7 @@
 // ===== 데이터 저장 =====
 // IndexedDB(가마·소성·기록)와 localStorage(간단한 기억값) 접근은 이 파일에서만 함
 
-import { DB_NAME, DB_VERSION, LEGACY_KEY_KILNS, LEGACY_KEY_LAST } from './config.js?v=0.3.28';
+import { DB_NAME, DB_VERSION, LEGACY_KEY_KILNS, LEGACY_KEY_LAST } from './config.js?v=0.3.30';
 
 const OPEN_TIMEOUT_MS = 8000; // 일부 iOS 버전에서 open 요청이 응답 없이 멈추는 경우 대비
 
