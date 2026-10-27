@@ -5,9 +5,9 @@
 import {
   OCR_TARGET_H, OCR_GRAB_MAX_H, OCR_PAD_RATIO, OCR_CLOSE_RATIO, OCR_THICKEN_RATIO, OCR_SATURATED_R, OCR_SATURATED_GB,
   OCR_VARIANTS, OCR_STABLE_READS, OCR_RESEEK_FAILS, OCR_MIN_CONTENT_H, OCR_FRAGMENT_WIDTH
-} from './config.js?v=0.3.20';
-import { otsuThreshold } from './recognizer.js?v=0.3.20';
-import { kilnSourceRegion } from './roi.js?v=0.3.20';
+} from './config.js?v=0.3.21';
+import { otsuThreshold } from './recognizer.js?v=0.3.21';
+import { kilnSourceRegion } from './roi.js?v=0.3.21';
 
 // 전처리 방식 이름 (판독 보정 화면 표시용)
 export const VARIANT_LABELS = {
@@ -116,19 +116,62 @@ export function grayOf(data, n) {
   return out;
 }
 
-// 빨간 정도: R - (G+B)/2. 빨간 LED 중심이 하얗게 포화되면(R·G·B 모두 높음) 이 값이 0이 되므로 최대값으로 처리
-export function redScoreOf(data, n) {
-  const out = new Uint8Array(n);
+// 주변 픽셀이 배경보다 충분히 빨가면 true. 밤의 포화된 획 중심만 획으로 남기고, 혼자 흰 반사는 배경으로 둔다.
+function neighborIsRed(excess, W, H, x, y, bg) {
+  const y0 = Math.max(0, y - 6);
+  const y1 = Math.min(H - 1, y + 6);
+  const x0 = Math.max(0, x - 6);
+  const x1 = Math.min(W - 1, x + 6);
+  for (let yy = y0; yy <= y1; yy++) {
+    const row = yy * W;
+    for (let xx = x0; xx <= x1; xx++) {
+      if (xx === x && yy === y) continue;
+      if (excess[row + xx] - bg >= 28) return true;
+    }
+  }
+  return false;
+}
+
+// 빨간 정도. 창 테두리의 공통 빨강을 빼서 낮 빛이 패널 전체에 더해진 값을 걷고, LED가 더한 빨강만 남긴다.
+// 하얗게 포화된 점은 주변에 빨간 획이 있을 때만 숫자로 본다.
+export function redScoreOf(data, W, H) {
+  const n = W * H;
+  const excess = new Int16Array(n);
   for (let i = 0; i < n; i++) {
     const j = i * 4;
-    const r = data[j];
-    const g = data[j + 1];
-    const b = data[j + 2];
-    out[i] = (r >= OCR_SATURATED_R && g >= OCR_SATURATED_GB && b >= OCR_SATURATED_GB)
-      ? 255
-      : clamp(Math.round(r - (g + b) / 2), 0, 255);
+    excess[i] = data[j] - ((data[j + 1] + data[j + 2]) >> 1);
+  }
+  const bg = borderMedian(excess, W, H);
+  const out = new Uint8Array(n);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const i = y * W + x;
+      const j = i * 4;
+      const lifted = excess[i] - bg;
+      if (data[j] >= OCR_SATURATED_R && data[j + 1] >= OCR_SATURATED_GB && data[j + 2] >= OCR_SATURATED_GB) {
+        out[i] = neighborIsRed(excess, W, H, x, y, bg) ? 255 : 0;
+      } else {
+        out[i] = lifted > 8 ? clamp(Math.round(lifted), 0, 255) : 0;
+      }
+    }
   }
   return out;
+}
+
+function boxCropped(box, W, H) {
+  return !!box && !box.keptFull && (box.w < W - 1 || box.h < H - 1);
+}
+
+// 회색으로 획이 안 보이면 빨강 점수의 범위를 쓴다. 어두운 LCD는 회색 범위를 유지한다.
+export function chooseContentBox(gray, red, W, H) {
+  const grayBox = contentBounds(gray, W, H);
+  const redBox = contentBounds(red, W, H);
+  const grayOn = boxCropped(grayBox, W, H);
+  const redOn = boxCropped(redBox, W, H);
+  if (redOn && !grayOn) return redBox;
+  if (grayOn && !redOn) return grayBox;
+  if (redOn && grayOn && redBox.w * redBox.h < grayBox.w * grayBox.h * 0.9) return redBox;
+  return grayBox;
 }
 
 // Otsu 임계값 + 수동 보정으로 이진화. 1 = 숫자 픽셀. brightDigits=false면 어두운 픽셀이 숫자
@@ -349,7 +392,7 @@ export function processVariant(img, variant, kiln) {
     return { rgba: contrastRgba(gray, meanOf(gray) < 128), otsu: null, threshold: null };
   }
   if (variant === 'red') {
-    return binaryVariant(redScoreOf(img.data, n), W, H, true, offset);
+    return binaryVariant(redScoreOf(img.data, W, H), W, H, true, offset);
   }
   if (variant === 'binInv') {
     return binaryVariant(gray, W, H, false, offset);
@@ -391,7 +434,8 @@ export function createOcrPreprocessor(camera) {
     sourceCtx.putImageData(img, 0, 0);
 
     // 빈 여백을 걷어 숫자 높이가 OCR 입력 높이에 가깝게 한 뒤 확대/축소
-    const box = contentBounds(grayOf(img.data, grabW * grabH), grabW, grabH);
+    const pixels = grabW * grabH;
+    const box = chooseContentBox(grayOf(img.data, pixels), redScoreOf(img.data, grabW, grabH), grabW, grabH);
     // 이미 목표 높이에 가까우면 한 번 더 키우거나 줄이지 않음
     const near = box.h >= OCR_TARGET_H * 0.75 && box.h <= OCR_TARGET_H * 1.5;
     const H = near ? box.h : OCR_TARGET_H;

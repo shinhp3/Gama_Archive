@@ -1,7 +1,7 @@
 // ===== 기록 보기 (Phase 5) =====
 
-import * as db from './db.js?v=0.3.20';
-import { createTempChart } from './chart.js?v=0.3.20';
+import * as db from './db.js?v=0.3.21';
+import { createTempChart } from './chart.js?v=0.3.21';
 
 /**
  * @param {{ listEl: HTMLElement, listCard: HTMLElement, detailSection: HTMLElement, ...detailElements }} els
@@ -35,6 +35,29 @@ export function createHistoryView(els) {
     const mid = sorted.length >> 1;
     if (sorted.length % 2 === 1) return sorted[mid];
     return (sorted[mid - 1] + sorted[mid]) / 2;
+  }
+
+  function formatWall(ts) {
+    const d = new Date(ts);
+    return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+  }
+
+  function formatWallRange(startTs, endTs) {
+    const a = new Date(startTs);
+    const b = new Date(endTs);
+    const sameDay = a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+    if (sameDay) return formatWall(startTs) + '–' + formatWall(endTs);
+    const day = (d) => (d.getMonth() + 1) + '/' + d.getDate() + ' ' + formatWall(d.getTime());
+    return day(a) + '–' + day(b);
+  }
+
+  function detailChartHeight() {
+    const available = window.innerHeight || 800;
+    return Math.max(190, Math.min(250, Math.round(available * 0.3)));
+  }
+
+  function setDetailLayout(on) {
+    document.body.classList.toggle('history-detail-open', on);
   }
 
   function formatClock(min) {
@@ -191,10 +214,13 @@ export function createHistoryView(els) {
       
       // 정보 표시
       detailKilnName.textContent = firing.kilnName;
-      detailStartTime.textContent = new Date(firing.startedAt).toLocaleString('ko-KR');
-      detailEndTime.textContent = firing.endedAt 
-        ? new Date(firing.endedAt).toLocaleString('ko-KR') 
-        : '진행 중';
+      const crossDay = !!(firing.endedAt && new Date(firing.startedAt).toDateString() !== new Date(firing.endedAt).toDateString());
+      const stamp = (ts) => {
+        const d = new Date(ts);
+        return crossDay ? (d.getMonth() + 1) + '/' + d.getDate() + ' ' + formatWall(ts) : formatWall(ts);
+      };
+      detailStartTime.textContent = stamp(firing.startedAt);
+      detailEndTime.textContent = firing.endedAt ? stamp(firing.endedAt) : '진행 중';
       
       const duration = (firing.endedAt || Date.now()) - firing.startedAt;
       const hours = Math.floor(duration / 3600000);
@@ -203,7 +229,7 @@ export function createHistoryView(els) {
       
       const temps = readings.map(r => r.temp).filter(t => t !== null);
       const maxTemp = temps.length > 0 ? Math.max(...temps) : null;
-      detailMaxTemp.textContent = maxTemp !== null ? maxTemp + '°C' : '—';
+      detailMaxTemp.textContent = maxTemp !== null ? '최고 ' + maxTemp + '°C' : '최고 —';
       detailReadingCount.textContent = readings.length + '개';
       renderSeries();
       
@@ -214,6 +240,7 @@ export function createHistoryView(els) {
       
       listCard.hidden = true;
       detailSection.hidden = false;
+      setDetailLayout(true);
       
       console.log('[History] 화면 전환 완료');
       
@@ -243,7 +270,9 @@ export function createHistoryView(els) {
     if (intervalMinutes <= 1) {
       detailReadingCount.textContent = readings.length + '개';
       currentChart = createTempChart(chartContainer, readings, firing.startedAt, {
-        showPoints: readings.length <= 80
+        showPoints: readings.length <= 80,
+        height: detailChartHeight(),
+        onPick: (index) => selectReading(index)
       });
       const rows = readings.map((r, i) => {
           const time = new Date(r.ts).toLocaleTimeString('ko-KR');
@@ -290,11 +319,23 @@ export function createHistoryView(els) {
     currentChart = createTempChart(chartContainer, buckets.map((b) => ({
       ts: b.ts,
       temp: b.temp
-    })), firing.startedAt, { showPoints: true });
+    })), firing.startedAt, {
+      showPoints: true,
+      height: detailChartHeight(),
+      pointLabel: (i) => {
+        const b = buckets[i];
+        if (!b) return '';
+        const startTs = firing.startedAt + b.startMin * 60000;
+        const endTs = firing.startedAt + b.endMin * 60000;
+        return formatWallRange(startTs, endTs) + ' · ' + formatBucketTemp(b.temp);
+      },
+      onPick: (index) => selectReading(index)
+    });
     const rows = buckets.map((b, i) => `
       <tr data-index="${i}" tabindex="0">
         <td>${i + 1}</td>
         <td>${formatClock(b.startMin)}–${formatClock(b.endMin)}</td>
+        <td>${formatWallRange(firing.startedAt + b.startMin * 60000, firing.startedAt + b.endMin * 60000)}</td>
         <td>${formatBucketTemp(b.temp)}</td>
         <td>${b.count}개</td>
       </tr>
@@ -305,6 +346,7 @@ export function createHistoryView(els) {
           <tr>
             <th>#</th>
             <th>구간</th>
+            <th>시각</th>
             <th>온도</th>
             <th>포함 기록</th>
           </tr>
@@ -322,7 +364,8 @@ export function createHistoryView(els) {
       tr.classList.toggle('is-selected', Number(tr.dataset.index) === index);
     });
     currentChart.focusIndex(index);
-    chartContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const row = readingsTable.querySelector('tbody tr.is-selected');
+    if (row) row.scrollIntoView({ block: 'nearest', inline: 'nearest' });
   }
 
   function readingFromEvent(e) {
@@ -341,6 +384,7 @@ export function createHistoryView(els) {
     currentReadings = [];
     detailSection.hidden = true;
     listCard.hidden = false;
+    setDetailLayout(false);
     loadList();
   }
 

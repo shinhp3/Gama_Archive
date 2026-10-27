@@ -18,12 +18,12 @@
   </script>
   <title>가마 온도 기록</title>
   <!-- 파일을 바꿀 때마다 ?v= 값을 올려야 아이패드가 예전 파일을 캐시에서 쓰지 않음 (js의 import 경로와 config.js의 APP_VERSION도 같이) -->
-  <link rel="stylesheet" href="css/style.css?v=0.3.20">
+  <link rel="stylesheet" href="css/style.css?v=0.3.21">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.24/dist/uPlot.min.css">
   <!-- 숫자 인식 엔진 Tesseract.js (버전 고정, config.js의 TESSERACT_* 경로와 같은 버전). 이미지는 브라우저 안에서만 처리 -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@7.0.0/dist/tesseract.min.js" integrity="sha384-2BQ3U3OdKOb0Uczxqr41I9UvZkzr4V9Hv8uSzMMZAlmhsFClvdZX5wi5fDCzG+tM" crossorigin="anonymous" async></script>
   <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.24/dist/uPlot.iife.min.js"></script>
-  <script type="module" src="js/main.js?v=0.3.20"></script>
+  <script type="module" src="js/main.js?v=0.3.21"></script>
 </head>
 <body>
   <div id="verifyNotice" class="verify-notice" hidden role="status" aria-live="polite">
@@ -75,6 +75,11 @@
             <label for="cameraZoomInput" class="guide-label">카메라 확대</label>
             <input id="cameraZoomInput" type="range" aria-label="카메라 확대">
             <output id="cameraZoomValue" class="zoom-value">1×</output>
+          </div>
+          <div id="exposureBar" class="zoom-bar" hidden>
+            <label for="exposureInput" class="guide-label">노출</label>
+            <input id="exposureInput" type="range" aria-label="노출 보정">
+            <output id="exposureValue" class="zoom-value">0 EV</output>
           </div>
           <!-- 확대/이동 보조 조작 (영역 지정 모드에서만 표시) -->
           <div id="zoomBar" class="zoom-bar" hidden>
@@ -341,7 +346,7 @@
             <li>창 크기를 바꾸거나 기기를 돌려도 저장한 영역은 유지됩니다. 카메라 원본 비율을 맞출 수 없을 때만 다시 확인하면 됩니다.</li>
             <li>가마의 열기가 닿지 않도록 기기를 충분히 떨어뜨려 두세요.</li>
             <li>노란 네모 안에는 현재 온도 숫자만 넣으세요. 자릿수에 맞춰 나누지 않아도 됩니다.</li>
-            <li>기기가 카메라 확대를 지원하면 조절이 나타납니다. 배율을 바꾼 뒤에는 노란 네모가 숫자와 맞는지 확인하세요. 소성 중에는 바꿀 수 없습니다.</li>
+            <li>기기가 카메라 확대나 노출 보정을 지원하면 조절이 나타납니다. 낮에 빨간 숫자가 흐리면 노출을 조금 어둡게 맞추세요. 바꾼 뒤에는 노란 네모가 숫자와 맞는지 확인하세요. 소성 중에는 바꿀 수 없습니다.</li>
           </ul>
         </details>
       </div>
@@ -358,53 +363,30 @@
       
       <!-- 소성 상세 보기 -->
       <section id="firingDetail" class="card" hidden>
-        <div class="detail-header">
-          <button id="backToListBtn" type="button" class="back-btn">← 목록으로</button>
-          <h2 id="detailKilnName"></h2>
-        </div>
-        
-        <div class="detail-info">
-          <div class="info-row">
-            <span class="info-label">시작:</span>
-            <span id="detailStartTime"></span>
+        <div class="detail-fixed">
+          <div class="detail-header">
+            <button id="backToListBtn" type="button" class="back-btn">← 목록</button>
+            <h2 id="detailKilnName"></h2>
+            <button id="deleteFiringBtn" type="button" class="danger-btn">삭제</button>
           </div>
-          <div class="info-row">
-            <span class="info-label">종료:</span>
-            <span id="detailEndTime"></span>
+          <p class="detail-summary">
+            <span id="detailStartTime"></span><span aria-hidden="true"> – </span><span id="detailEndTime"></span>
+            <span aria-hidden="true"> · </span><span id="detailDuration"></span>
+            <span aria-hidden="true"> · </span><span id="detailMaxTemp"></span>
+            <span aria-hidden="true"> · </span><span id="detailReadingCount"></span>
+          </p>
+          <div id="intervalBar" class="interval-bar" role="group" aria-label="보기 간격">
+            <button type="button" data-minutes="1" aria-pressed="false">1분</button>
+            <button type="button" data-minutes="30" aria-pressed="true">30분</button>
+            <button type="button" data-minutes="60" aria-pressed="false">1시간</button>
+            <button type="button" data-minutes="120" aria-pressed="false">2시간</button>
           </div>
-          <div class="info-row">
-            <span class="info-label">소요:</span>
-            <span id="detailDuration"></span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">최고온도:</span>
-            <span id="detailMaxTemp"></span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">기록 수:</span>
-            <span id="detailReadingCount"></span>
+          <div id="chartContainer" class="chart-container">
+            <div id="tempChart" class="temp-chart"></div>
           </div>
         </div>
-
-        <div id="intervalBar" class="interval-bar" role="group" aria-label="보기 간격">
-          <button type="button" data-minutes="1" aria-pressed="false">1분</button>
-          <button type="button" data-minutes="30" aria-pressed="true">30분</button>
-          <button type="button" data-minutes="60" aria-pressed="false">1시간</button>
-          <button type="button" data-minutes="120" aria-pressed="false">2시간</button>
-        </div>
-        
-        <!-- 그래프 영역 -->
-        <div id="chartContainer" class="chart-container">
-          <div id="tempChart" class="temp-chart"></div>
-        </div>
-        
-        <!-- 온도 데이터 테이블 -->
-        <h3>온도 기록</h3>
-        <p class="field-note">표를 누르면 그래프에서 그 위치를 보여 줍니다.</p>
-        <div id="readingsTable" class="readings-table"></div>
-        
-        <div class="detail-actions">
-          <button id="deleteFiringBtn" type="button" class="danger-btn">삭제</button>
+        <div class="detail-scroll">
+          <div id="readingsTable" class="readings-table"></div>
         </div>
       </section>
     </section>

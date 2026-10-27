@@ -1,8 +1,8 @@
 // ===== 카메라 =====
 // 후면 카메라 스트림 시작/중지, 영상 프레임에서 원하는 영역을 잘라내기
 
-import { CAMERA_IDEAL_W, CAMERA_IDEAL_H } from './config.js?v=0.3.20';
-import { markTiming } from './timings.js?v=0.3.20';
+import { CAMERA_IDEAL_W, CAMERA_IDEAL_H } from './config.js?v=0.3.21';
+import { markTiming } from './timings.js?v=0.3.21';
 
 const PERMISSION_ERRORS = ['NotAllowedError', 'PermissionDeniedError', 'SecurityError'];
 
@@ -272,8 +272,40 @@ export function createCamera(els, hooks) {
     }
   }
 
+  // 기기가 알려 주는 노출 보정(EV). 없으면 null
+  function exposureCapability() {
+    const track = videoTrack();
+    if (!track || typeof track.getCapabilities !== 'function') return null;
+    let caps = null;
+    try { caps = track.getCapabilities(); } catch (e) { return null; }
+    const ex = caps && caps.exposureCompensation;
+    if (!ex || typeof ex.min !== 'number' || typeof ex.max !== 'number' || !(ex.max > ex.min)) return null;
+    const step = typeof ex.step === 'number' && ex.step > 0 ? ex.step : 0.1;
+    return { min: ex.min, max: ex.max, step };
+  }
+
+  function currentExposure() {
+    const settings = trackSettings();
+    return settings && typeof settings.exposureCompensation === 'number' ? settings.exposureCompensation : null;
+  }
+
+  // value가 없으면 보정 없음(0). 범위 밖은 기기 한계로 맞춘다.
+  function applyExposure(value) {
+    const track = videoTrack();
+    const cap = exposureCapability();
+    if (!track || !cap || typeof track.applyConstraints !== 'function') return Promise.resolve(null);
+    const base = 0 < cap.min ? cap.min : (0 > cap.max ? cap.max : 0);
+    const want = value == null || !isFinite(value) ? base : Math.min(cap.max, Math.max(cap.min, value));
+    const now = currentExposure();
+    if (now != null && Math.abs(now - want) < cap.step / 2) return Promise.resolve(now);
+    return track.applyConstraints({ advanced: [{ exposureCompensation: want }] }).then(() => {
+      const applied = currentExposure();
+      return applied == null ? want : applied;
+    }).catch(() => null);
+  }
+
   return {
     start, stop, isRunning, videoSize, trackSettings, isFrameReady, resumeIfPaused, drawRegion, grabRegion,
-    zoomCapability, currentZoom, applyZoom
+    zoomCapability, currentZoom, applyZoom, exposureCapability, currentExposure, applyExposure
   };
 }

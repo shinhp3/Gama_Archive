@@ -1,8 +1,8 @@
 // ===== 소성 자동 기록 =====
 // 5초 판독 결과를 모아 1분마다 중앙값을 계산해 저장
 
-import { RECORD_INTERVAL_MS, MIN_VALID_SAMPLES } from './config.js?v=0.3.20';
-import * as db from './db.js?v=0.3.20';
+import { RECORD_INTERVAL_MS, MIN_VALID_SAMPLES } from './config.js?v=0.3.21';
+import * as db from './db.js?v=0.3.21';
 
 function makeId() {
   if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();

@@ -5,10 +5,10 @@
 import {
   SEGMENTS, THRESHOLD_OFFSET_LIMIT, SHEAR_LIMIT, MIN_SEG_ON_RATIO, MAX_SEG_ON_RATIO,
   DEFAULT_DIGIT_ASPECT, MIN_DIGIT_ASPECT, MAX_DIGIT_ASPECT, OCR_PREPROCESS_OPTIONS, DEFAULT_OCR_PREPROCESS
-} from './config.js?v=0.3.20';
-import { confidenceText, confidenceLevel, recognitionMode, isReadResult, validationLabel } from './reading.js?v=0.3.20';
-import { formatTemp } from './ocr.js?v=0.3.20';
-import { VARIANT_LABELS } from './ocrPreprocess.js?v=0.3.20';
+} from './config.js?v=0.3.21';
+import { confidenceText, confidenceLevel, recognitionMode, isReadResult, validationLabel } from './reading.js?v=0.3.21';
+import { formatTemp } from './ocr.js?v=0.3.21';
+import { VARIANT_LABELS } from './ocrPreprocess.js?v=0.3.21';
 
 const DIAG_IMAGE_MAX_H = 120; // 진단 이미지 표시 높이 (CSS px 기준 캔버스 크기)
 

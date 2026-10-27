@@ -15,9 +15,16 @@ function chartAxes() {
     grid: { show: true, stroke: grid, width: 1 }
   });
   return [
-    Object.assign(axis(), { label: '경과 시간 (분)' }),
+    Object.assign(axis(), { label: '시각' }),
     Object.assign(axis(), { label: '온도 (°C)' })
   ];
+}
+
+function formatClockShort(ts) {
+  const d = new Date(ts);
+  const h = String(d.getHours()).padStart(2, '0');
+  const m = String(d.getMinutes()).padStart(2, '0');
+  return h + ':' + m;
 }
 
 /**
@@ -44,6 +51,7 @@ export function createTempChart(container, readings, startedAt, options) {
   });
 
   const data = [times, temps];
+  const plotH = options && options.height ? options.height : 240;
 
   function formatElapsed(min) {
     const whole = Math.round(min);
@@ -62,10 +70,10 @@ export function createTempChart(container, readings, startedAt, options) {
   // 그래프 옵션
   const opts = {
     width: container.clientWidth,
-    height: 300,
+    height: plotH,
     series: [
       {
-        label: '시간 (분)'
+        label: '시각'
       },
       {
         label: '온도 (°C)',
@@ -87,15 +95,17 @@ export function createTempChart(container, readings, startedAt, options) {
         range: [0, 1400]
       }
     },
-    axes: chartAxes(),
+    axes: chartAxes().map((axis, i) => {
+      if (i !== 0) return axis;
+      return Object.assign({}, axis, {
+        values: (u, splits) => splits.map((v) => {
+          if (typeof v !== 'number' || !isFinite(v)) return '';
+          return formatClockShort(startedAt + v * 60000);
+        })
+      });
+    }),
     cursor: {
-      lock: true,
-      focus: {
-        prox: 16
-      },
-      sync: {
-        key: 'temp-chart'
-      }
+      show: false
     },
     legend: {
       show: true
@@ -135,7 +145,8 @@ export function createTempChart(container, readings, startedAt, options) {
     const top = chart.valToPos(y, 'y', false);
     dot.hidden = false;
     dot.style.top = top + 'px';
-    label.textContent = formatElapsed(x) + ' · ' + formatPointTemp(y);
+    const custom = options && typeof options.pointLabel === 'function' ? options.pointLabel(focusIdx) : '';
+    label.textContent = custom || (formatClockShort(startedAt + x * 60000) + ' · ' + formatElapsed(x) + ' · ' + formatPointTemp(y));
     label.style.top = (top < 36 ? top + 16 : top - 28) + 'px';
   }
 
@@ -144,11 +155,38 @@ export function createTempChart(container, readings, startedAt, options) {
     placeFocus();
   };
 
+  function nearestIndex(px, py) {
+    let best = -1;
+    let bestDist = Infinity;
+    for (let i = 0; i < times.length; i++) {
+      const x = chart.valToPos(times[i], 'x', false);
+      const y = typeof temps[i] === 'number' ? chart.valToPos(temps[i], 'y', false) : null;
+      const dx = x - px;
+      const dy = y == null ? 0 : y - py;
+      const dist = dx * dx + dy * dy;
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = i;
+      }
+    }
+    return best;
+  }
+
+  if (over) {
+    over.addEventListener('click', (e) => {
+      const rect = over.getBoundingClientRect();
+      const idx = nearestIndex(e.clientX - rect.left, e.clientY - rect.top);
+      if (idx < 0) return;
+      chart.focusIndex(idx);
+      if (options && typeof options.onPick === 'function') options.onPick(idx);
+    });
+  }
+
   // 반응형: 컨테이너 크기 변경 시 그래프 크기 조정
   const resizeObserver = new ResizeObserver(() => {
     chart.setSize({
       width: container.clientWidth,
-      height: 300
+      height: plotH
     });
     placeFocus();
   });
