@@ -1,20 +1,21 @@
 // ===== 진입점 =====
 // 화면 요소를 찾아 각 모듈을 연결하고, 탭 전환과 이벤트 처리를 담당
 
-import { APP_VERSION, PREVIEW_INTERVAL_MS, LIVE_READ_MS, CAMERA_IDEAL_W, CAMERA_IDEAL_H, OCR_LOCK_REVISION } from './config.js?v=0.3.21';
-import { initDb } from './db.js?v=0.3.21';
-import { createCamera } from './camera.js?v=0.3.21';
-import { createRoiEditor, kilnSourceRegion, frameAspectRelation } from './roi.js?v=0.3.21';
-import { markTiming, timingText } from './timings.js?v=0.3.21';
-import { createKilnManager } from './kilns.js?v=0.3.21';
-import { createReader, createLiveDisplay, recognitionMode, isRecognitionReady } from './reading.js?v=0.3.21';
-import { formatTemp } from './ocr.js?v=0.3.21';
-import { createOcrEngine } from './ocr.js?v=0.3.21';
-import { createOcrPreprocessor } from './ocrPreprocess.js?v=0.3.21';
-import { createCalibrationPanel } from './calibration.js?v=0.3.21';
-import { segmentQuads } from './recognizer.js?v=0.3.21';
-import { createRecorder } from './recorder.js?v=0.3.21';
-import { createHistoryView } from './history.js?v=0.3.21';
+import { APP_VERSION, PREVIEW_INTERVAL_MS, LIVE_READ_MS, CAMERA_IDEAL_W, CAMERA_IDEAL_H, OCR_LOCK_REVISION } from './config.js?v=0.3.28';
+import { initDb } from './db.js?v=0.3.28';
+import { createCamera } from './camera.js?v=0.3.28';
+import { createRoiEditor, kilnSourceRegion, frameAspectRelation } from './roi.js?v=0.3.28';
+import { markTiming, timingText } from './timings.js?v=0.3.28';
+import { createKilnManager } from './kilns.js?v=0.3.28';
+import { createReader, createLiveDisplay, recognitionMode, isRecognitionReady } from './reading.js?v=0.3.28';
+import { formatTemp } from './ocr.js?v=0.3.28';
+import { createOcrEngine } from './ocr.js?v=0.3.28';
+import { createOcrPreprocessor } from './ocrPreprocess.js?v=0.3.28';
+import { createCalibrationPanel } from './calibration.js?v=0.3.28';
+import { segmentQuads } from './recognizer.js?v=0.3.28';
+import { createRecorder } from './recorder.js?v=0.3.28';
+import { createHistoryView } from './history.js?v=0.3.28';
+import { exportArchive, parseArchive, importArchive } from './backup.js?v=0.3.28';
 
 const TABS = ['record', 'history'];
 
@@ -47,6 +48,9 @@ function getElements() {
     readingsTable: $('readingsTable'),
     intervalBar: $('intervalBar'),
     deleteFiringBtn: $('deleteFiringBtn'),
+    exportBackupBtn: $('exportBackupBtn'),
+    importBackupBtn: $('importBackupBtn'),
+    importBackupInput: $('importBackupInput'),
     roiEditBtn: $('roiEditBtn'),
     cameraBtn: $('cameraBtn'),
     verifyNotice: $('verifyNotice'),
@@ -635,6 +639,7 @@ function startApp() {
     roi.setEditable(next);
     els.roiEditBtn.setAttribute('aria-pressed', next ? 'true' : 'false');
     if (next) {
+      document.dispatchEvent(new CustomEvent('gama-control', { detail: 'guideBar' }));
       showMessage('온도 숫자 전체가 노란 네모 안에 들어오게 확대·이동하세요. 틀 너비와 가로세로로 여백을 맞출 수 있습니다. 프로그램 번호, 시간, 목표 온도는 넣지 마세요.', 'ok');
     } else {
       hideMessage();
@@ -727,6 +732,94 @@ function startApp() {
   }
 
   // ===== 이벤트 연결 =====
+  // 쓸 수 있는 조절만 버튼으로 보여 주고, 고른 항목의 슬라이더만 연다.
+  function bindCameraControls() {
+    const dock = document.getElementById('cameraControls');
+    const rail = document.getElementById('ctrlRail');
+    if (!dock || !rail) return;
+    const chips = Array.from(rail.querySelectorAll('.ctrl-chip'));
+    let current = null;
+
+    function barOf(chip) {
+      return document.getElementById(chip.dataset.for);
+    }
+
+    function refresh() {
+      const open = chips.filter((chip) => {
+        const bar = barOf(chip);
+        const available = !!(bar && !bar.hidden);
+        chip.hidden = !available;
+        return available;
+      });
+      if (!open.length) {
+        current = null;
+        rail.hidden = true;
+        chips.forEach((chip) => {
+          chip.setAttribute('aria-selected', 'false');
+          const bar = barOf(chip);
+          if (bar) bar.classList.remove('is-open');
+        });
+        return;
+      }
+      if (!open.some((chip) => chip.dataset.for === current)) current = open[0].dataset.for;
+      chips.forEach((chip) => {
+        const on = chip.dataset.for === current;
+        chip.setAttribute('aria-selected', on ? 'true' : 'false');
+        const bar = barOf(chip);
+        if (bar) bar.classList.toggle('is-open', on);
+        if (on && !chip.hidden) {
+          const left = chip.offsetLeft;
+          const right = left + chip.offsetWidth;
+          if (left < rail.scrollLeft) rail.scrollLeft = left;
+          else if (right > rail.scrollLeft + rail.clientWidth) rail.scrollLeft = right - rail.clientWidth;
+        }
+      });
+      rail.hidden = open.length < 2;
+    }
+
+    function stepRange(input, dir) {
+      if (!input || input.disabled) return;
+      const step = parseFloat(input.step);
+      const stepN = isFinite(step) && step > 0 ? step : 1;
+      const min = parseFloat(input.min);
+      const max = parseFloat(input.max);
+      const cur = parseFloat(input.value);
+      const base = isFinite(cur) ? cur : (isFinite(min) ? min : 0);
+      let next = base + dir * stepN;
+      if (isFinite(min)) next = Math.max(min, next);
+      if (isFinite(max)) next = Math.min(max, next);
+      const decimals = (String(stepN).split('.')[1] || '').length;
+      input.value = decimals ? next.toFixed(decimals) : String(Math.round(next));
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    chips.forEach((chip) => {
+      chip.addEventListener('click', () => {
+        current = chip.dataset.for;
+        refresh();
+      });
+    });
+    dock.querySelectorAll('.step-btn[data-step]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const input = btn.parentElement && btn.parentElement.querySelector('input[type="range"]');
+        stepRange(input, Number(btn.dataset.step) || 0);
+      });
+    });
+    document.addEventListener('gama-control', (e) => {
+      if (!e.detail) return;
+      current = e.detail;
+      refresh();
+    });
+    const obs = new MutationObserver(refresh);
+    chips.forEach((chip) => {
+      const bar = barOf(chip);
+      if (bar) obs.observe(bar, { attributes: true, attributeFilter: ['hidden'] });
+    });
+    dock.classList.add('dock-ready');
+    refresh();
+  }
+
   function bindEvents() {
     applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light');
     if (els.themeBtn) {
@@ -741,6 +834,65 @@ function startApp() {
     els.tabButtons.forEach((btn) => {
       btn.addEventListener('click', () => showTab(btn.dataset.tab));
     });
+
+    if (els.exportBackupBtn) {
+      els.exportBackupBtn.addEventListener('click', () => {
+        exportArchive().then((archive) => {
+          const blob = new Blob([JSON.stringify(archive)], { type: 'application/json' });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          const now = new Date();
+          const stamp = now.getFullYear()
+            + String(now.getMonth() + 1).padStart(2, '0')
+            + String(now.getDate()).padStart(2, '0');
+          link.href = url;
+          link.download = 'gama-archive-' + stamp + '.json';
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+          setTimeout(() => URL.revokeObjectURL(url), 1500);
+          showMessage('기록 파일을 저장했습니다. 다른 브라우저에서는 이 파일을 불러오세요.', 'ok', 5000);
+        }).catch((err) => {
+          showMessage(err && err.message ? err.message : '기록 파일을 만들지 못했습니다.', 'error');
+        });
+      });
+    }
+
+    if (els.importBackupBtn && els.importBackupInput) {
+      els.importBackupBtn.addEventListener('click', () => {
+        els.importBackupInput.value = '';
+        els.importBackupInput.click();
+      });
+      els.importBackupInput.addEventListener('change', () => {
+        const file = els.importBackupInput.files && els.importBackupInput.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          let archive;
+          try {
+            archive = parseArchive(String(reader.result || ''));
+          } catch (err) {
+            showMessage(err && err.message ? err.message : '기록 파일을 읽지 못했습니다.', 'error');
+            return;
+          }
+          const ask = '이 브라우저에 기록을 넣습니다.\n가마 ' + archive.kilns.length
+            + '개, 소성 ' + archive.firings.length
+            + '개, 온도 ' + archive.readings.length
+            + '개\n\n같은 기록은 파일 내용으로 바뀌고, 이 브라우저에만 있는 기록은 남습니다.';
+          if (!confirm(ask)) return;
+          importArchive(archive).then((counts) => {
+            return kilns.load().then(() => {
+              history.loadList();
+              showMessage('기록을 불러왔습니다. 소성 ' + counts.firings + '개, 온도 ' + counts.readings + '개.', 'ok', 5000);
+            });
+          }).catch((err) => {
+            showMessage(err && err.message ? err.message : '기록을 불러오지 못했습니다.', 'error');
+          });
+        };
+        reader.onerror = () => showMessage('기록 파일을 읽지 못했습니다.', 'error');
+        reader.readAsText(file);
+      });
+    }
 
     // 카메라 시작/중지 (버튼 클릭 시에만 시작)
     els.cameraBtn.addEventListener('click', () => {
@@ -905,6 +1057,7 @@ function startApp() {
   }
 
   els.appVersion.textContent = APP_VERSION;
+  bindCameraControls();
   bindEvents();
   showTab('record');
 

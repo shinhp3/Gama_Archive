@@ -18,12 +18,12 @@
   </script>
   <title>가마 온도 기록</title>
   <!-- 파일을 바꿀 때마다 ?v= 값을 올려야 아이패드가 예전 파일을 캐시에서 쓰지 않음 (js의 import 경로와 config.js의 APP_VERSION도 같이) -->
-  <link rel="stylesheet" href="css/style.css?v=0.3.21">
+  <link rel="stylesheet" href="css/style.css?v=0.3.28">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.24/dist/uPlot.min.css">
   <!-- 숫자 인식 엔진 Tesseract.js (버전 고정, config.js의 TESSERACT_* 경로와 같은 버전). 이미지는 브라우저 안에서만 처리 -->
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@7.0.0/dist/tesseract.min.js" integrity="sha384-2BQ3U3OdKOb0Uczxqr41I9UvZkzr4V9Hv8uSzMMZAlmhsFClvdZX5wi5fDCzG+tM" crossorigin="anonymous" async></script>
   <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.24/dist/uPlot.iife.min.js"></script>
-  <script type="module" src="js/main.js?v=0.3.21"></script>
+  <script type="module" src="js/main.js?v=0.3.28"></script>
 </head>
 <body>
   <div id="verifyNotice" class="verify-notice" hidden role="status" aria-live="polite">
@@ -70,45 +70,84 @@
               <span id="cameraTempValue" class="camera-temp-value is-empty">—</span><span class="camera-temp-unit">°C</span>
             </div>
           </div>
-          <!-- 기기 카메라 확대. 브라우저가 줌을 알려 줄 때만 표시. 화면 확대와 별개 -->
-          <div id="cameraZoomBar" class="zoom-bar" hidden>
-            <label for="cameraZoomInput" class="guide-label">카메라 확대</label>
-            <input id="cameraZoomInput" type="range" aria-label="카메라 확대">
-            <output id="cameraZoomValue" class="zoom-value">1×</output>
-          </div>
-          <div id="exposureBar" class="zoom-bar" hidden>
-            <label for="exposureInput" class="guide-label">노출</label>
-            <input id="exposureInput" type="range" aria-label="노출 보정">
-            <output id="exposureValue" class="zoom-value">0 EV</output>
-          </div>
-          <!-- 확대/이동 보조 조작 (영역 지정 모드에서만 표시) -->
-          <div id="zoomBar" class="zoom-bar" hidden>
-            <button id="zoomOutBtn" type="button" class="icon-btn zoom-step" aria-label="축소">−</button>
-            <input id="zoomInput" type="range" step="1" value="0" aria-label="확대 배율">
-            <button id="zoomInBtn" type="button" class="icon-btn zoom-step" aria-label="확대">+</button>
-            <output id="zoomValue" class="zoom-value">—</output>
-            <button id="zoomResetBtn" type="button">초기화</button>
-          </div>
-          <!-- 노란 틀 너비 (영역 지정 모드에서만 표시, 영상 배율과 별개) -->
-          <div id="guideBar" class="zoom-bar" hidden>
-            <label for="guideInput" class="guide-label">틀 너비</label>
-            <input id="guideInput" type="range" value="40" aria-label="틀 너비">
-            <output id="guideValue" class="zoom-value">40%</output>
-          </div>
-          <!-- 노란 틀 가로세로 (폭/높이). 숫자 위아래 여백을 너비와 따로 조절 -->
-          <div id="aspectBar" class="zoom-bar" hidden>
-            <label for="aspectInput" class="guide-label">가로세로</label>
-            <input id="aspectInput" type="range" value="2.4" aria-label="틀 가로세로 비율">
-            <output id="aspectValue" class="zoom-value">2.40:1</output>
-          </div>
-          <!-- 노란 틀 회전 (영역 지정 모드에서만 표시). OCR 영역도 같은 각도로 회전 보정 -->
-          <div id="rotateBar" class="zoom-bar" hidden>
-            <label for="rotateInput" class="guide-label">회전</label>
-            <button id="rotateMinusBtn" type="button" class="rotate-step" aria-label="반시계 방향으로 0.5도">−0.5°</button>
-            <input id="rotateInput" type="range" value="0">
-            <button id="rotatePlusBtn" type="button" class="rotate-step" aria-label="시계 방향으로 0.5도">+0.5°</button>
-            <output id="rotateValue" class="zoom-value">0.0°</output>
-            <button id="rotateResetBtn" type="button" class="rotate-step">0°</button>
+          <!-- 카메라 아래 조절. 쓸 수 있는 항목만 버튼으로 고르고, 고른 항목만 크게 조절한다. -->
+          <div id="cameraControls" class="camera-controls">
+            <div id="ctrlRail" class="ctrl-rail" role="tablist" aria-label="카메라 조절" hidden>
+              <button type="button" class="ctrl-chip" role="tab" data-for="guideBar" hidden>틀</button>
+              <button type="button" class="ctrl-chip" role="tab" data-for="aspectBar" hidden>비율</button>
+              <button type="button" class="ctrl-chip" role="tab" data-for="rotateBar" hidden>회전</button>
+              <button type="button" class="ctrl-chip" role="tab" data-for="zoomBar" hidden>화면</button>
+              <button type="button" class="ctrl-chip" role="tab" data-for="cameraZoomBar" hidden>확대</button>
+              <button type="button" class="ctrl-chip" role="tab" data-for="exposureBar" hidden>노출</button>
+            </div>
+            <div id="guideBar" class="ctrl" hidden>
+              <div class="ctrl-head">
+                <label for="guideInput">틀 너비</label>
+                <output id="guideValue">40%</output>
+              </div>
+              <div class="ctrl-track">
+                <button type="button" class="step-btn" data-step="-1" aria-label="틀 좁히기">−</button>
+                <input id="guideInput" type="range" value="40" aria-label="틀 너비">
+                <button type="button" class="step-btn" data-step="1" aria-label="틀 넓히기">+</button>
+              </div>
+            </div>
+            <div id="aspectBar" class="ctrl" hidden>
+              <div class="ctrl-head">
+                <label for="aspectInput">가로세로</label>
+                <output id="aspectValue">2.40:1</output>
+              </div>
+              <div class="ctrl-track">
+                <button type="button" class="step-btn" data-step="-1" aria-label="세로로 늘리기">−</button>
+                <input id="aspectInput" type="range" value="2.4" aria-label="틀 가로세로 비율">
+                <button type="button" class="step-btn" data-step="1" aria-label="가로로 늘리기">+</button>
+              </div>
+            </div>
+            <div id="rotateBar" class="ctrl" hidden>
+              <div class="ctrl-head">
+                <label for="rotateInput">회전</label>
+                <output id="rotateValue">0.0°</output>
+                <button id="rotateResetBtn" type="button" class="ctrl-reset">0°</button>
+              </div>
+              <div class="ctrl-track">
+                <button id="rotateMinusBtn" type="button" class="step-btn" aria-label="반시계 방향으로 0.5도">−</button>
+                <input id="rotateInput" type="range" value="0" aria-label="회전">
+                <button id="rotatePlusBtn" type="button" class="step-btn" aria-label="시계 방향으로 0.5도">+</button>
+              </div>
+            </div>
+            <div id="zoomBar" class="ctrl" hidden>
+              <div class="ctrl-head">
+                <span id="zoomLabel">화면 확대</span>
+                <output id="zoomValue">—</output>
+                <button id="zoomResetBtn" type="button" class="ctrl-reset">초기화</button>
+              </div>
+              <div class="ctrl-track">
+                <button id="zoomOutBtn" type="button" class="step-btn" aria-label="축소">−</button>
+                <input id="zoomInput" type="range" step="1" value="0" aria-labelledby="zoomLabel">
+                <button id="zoomInBtn" type="button" class="step-btn" aria-label="확대">+</button>
+              </div>
+            </div>
+            <div id="cameraZoomBar" class="ctrl" hidden>
+              <div class="ctrl-head">
+                <label for="cameraZoomInput">카메라 확대</label>
+                <output id="cameraZoomValue">1×</output>
+              </div>
+              <div class="ctrl-track">
+                <button type="button" class="step-btn" data-step="-1" aria-label="카메라 축소">−</button>
+                <input id="cameraZoomInput" type="range" aria-label="카메라 확대">
+                <button type="button" class="step-btn" data-step="1" aria-label="카메라 확대">+</button>
+              </div>
+            </div>
+            <div id="exposureBar" class="ctrl" hidden>
+              <div class="ctrl-head">
+                <label for="exposureInput">노출</label>
+                <output id="exposureValue">0 EV</output>
+              </div>
+              <div class="ctrl-track">
+                <button type="button" class="step-btn" data-step="-1" aria-label="한 단계 어둡게">−</button>
+                <input id="exposureInput" type="range" aria-label="노출 보정">
+                <button type="button" class="step-btn" data-step="1" aria-label="한 단계 밝게">+</button>
+              </div>
+            </div>
           </div>
           <pre id="debugInfo" class="debug-info" hidden></pre>
           <div id="debugImages" class="debug-images" hidden>
@@ -347,6 +386,7 @@
             <li>가마의 열기가 닿지 않도록 기기를 충분히 떨어뜨려 두세요.</li>
             <li>노란 네모 안에는 현재 온도 숫자만 넣으세요. 자릿수에 맞춰 나누지 않아도 됩니다.</li>
             <li>기기가 카메라 확대나 노출 보정을 지원하면 조절이 나타납니다. 낮에 빨간 숫자가 흐리면 노출을 조금 어둡게 맞추세요. 바꾼 뒤에는 노란 네모가 숫자와 맞는지 확인하세요. 소성 중에는 바꿀 수 없습니다.</li>
+            <li>기록은 측정할 때마다 이 브라우저에 바로 저장됩니다. 창을 닫아도 같은 브라우저, 같은 주소로 열면 다시 보입니다. 다른 브라우저에서 보려면 기록 보기에서 파일로 저장한 뒤, 그 브라우저에서 불러오세요.</li>
           </ul>
         </details>
       </div>
@@ -356,6 +396,12 @@
     <section id="viewHistory" class="view" hidden>
       <section class="card">
         <h2>소성 기록</h2>
+        <p class="field-note">같은 브라우저는 다시 열면 기록이 보입니다. 다른 브라우저에서 보려면 여기서 파일로 저장한 뒤, 그 브라우저에서 불러오세요.</p>
+        <div class="btn-row backup-bar">
+          <button id="exportBackupBtn" type="button">기록 파일로 저장</button>
+          <button id="importBackupBtn" type="button">기록 불러오기</button>
+          <input id="importBackupInput" type="file" accept="application/json,.json" hidden>
+        </div>
         <div id="firingList" class="firing-list">
           <p class="muted">로딩 중...</p>
         </div>

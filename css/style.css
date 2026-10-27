@@ -187,6 +187,8 @@ select { -webkit-appearance: none; appearance: none; padding-right: clamp(36px, 
   gap: clamp(6px, 1vw, 8px);
 }
 .btn-row input { flex: 1 1 clamp(160px, 25vw, 200px); width: auto; }
+.backup-bar { margin: 0 0 12px; }
+.backup-bar button { flex: 1 1 auto; }
 
 /* ===== 상단 고정 영역: 안내 메시지 (스크롤해도 위에 보이도록 sticky) ===== */
 .sticky-stack {
@@ -1020,35 +1022,124 @@ body.history-detail-open #firingDetail .danger-btn {
 /* 영역 지정 모드가 아닐 때는 읽기 전용: 영상 위에서도 화면 스크롤 가능 */
 #overlay.readonly { touch-action: auto; cursor: default; }
 
-/* ===== 확대/이동 보조 조작 ===== */
-.zoom-bar {
+/* ===== 카메라 조절: 항목을 고르면 그 슬라이더만 크게 ===== */
+.camera-controls {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 16px;
+  background: var(--btn-bg);
+}
+.camera-controls:not(:has(.ctrl:not([hidden]))) { display: none; }
+.ctrl-rail {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  margin-bottom: 12px;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.ctrl-rail::-webkit-scrollbar { display: none; }
+.ctrl-chip {
+  flex: 1 1 auto;
+  min-width: max-content;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: transparent;
+  font-weight: 650;
+  font-size: 15px;
+}
+.ctrl-chip[aria-selected="true"] {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: var(--primary-text);
+}
+.camera-controls.dock-ready .ctrl:not(.is-open) { display: none; }
+.ctrl-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.ctrl-head label,
+.ctrl-head span {
+  font-weight: 650;
+  font-size: 15px;
+}
+.ctrl-head output {
+  margin-left: auto;
+  font-weight: 750;
+  font-variant-numeric: tabular-nums;
+  font-size: 22px;
+  line-height: 1;
+}
+.ctrl-reset {
+  min-height: 40px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 14px;
+  font-weight: 650;
+}
+.ctrl-track {
   display: flex;
   align-items: center;
-  gap: clamp(6px, 1vw, 8px);
-  margin-top: 10px;
+  gap: 8px;
 }
-.zoom-bar input[type="range"] {
+.ctrl-track:has(input:disabled) { opacity: 0.45; }
+.ctrl-track:has(input:disabled) .step-btn { pointer-events: none; }
+.step-btn {
+  width: 48px;
+  min-width: 48px;
+  height: 48px;
+  min-height: 48px;
+  padding: 0;
+  border-radius: 14px;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1;
+  flex: none;
+}
+.ctrl-track input[type="range"] {
+  -webkit-appearance: none;
+  appearance: none;
   flex: 1 1 auto;
   width: auto;
-  min-width: 80px;
-  min-height: 44px;
+  min-width: 0;
+  height: 48px;
+  min-height: 48px;
   margin: 0;
   padding: 0;
   border: 0;
   background: transparent;
-  accent-color: var(--primary);
+  cursor: pointer;
 }
-.zoom-step { 
-  font-size: clamp(20px, 3vw, 26px); 
-  font-weight: 600; 
-  flex: none; 
+.ctrl-track input[type="range"]:disabled { cursor: default; }
+.ctrl-track input[type="range"]::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--border);
 }
-.guide-label { 
-  flex: none; 
-  min-width: clamp(52px, 8vw, 68px);
-  font-weight: 600; 
-  font-size: clamp(14px, 2.2vw, 16px);
-  white-space: nowrap;
+.ctrl-track input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 28px;
+  height: 28px;
+  margin-top: -11px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--primary);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.28);
+}
+.ctrl-track input[type="range"]::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--border);
+  border: 0;
+}
+.ctrl-track input[type="range"]::-moz-range-thumb {
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--primary);
 }
 .roi-hint {
   margin: 10px 0 0;
@@ -1062,24 +1153,9 @@ body.history-detail-open #firingDetail .danger-btn {
   font-size: clamp(13px, 2vw, 14px);
   line-height: 1.45;
 }
-.rotate-step { 
-  flex: none; 
-  padding-left: clamp(8px, 1.5vw, 10px); 
-  padding-right: clamp(8px, 1.5vw, 10px); 
-  font-variant-numeric: tabular-nums; 
-}
 .debug-images { display: flex; flex-wrap: wrap; gap: clamp(6px, 1vw, 8px); margin-top: 6px; }
 .debug-images figure { margin: 0; font-size: clamp(11px, 1.8vw, 12px); color: var(--muted, #666); }
 .debug-images canvas { display: block; max-width: 100%; height: auto; background: #000; border: 1px solid #ccc; }
-.zoom-value {
-  flex: none;
-  min-width: clamp(64px, 9vw, 76px);
-  text-align: right;
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  font-size: clamp(14px, 2.2vw, 16px);
-}
-
 .debug-info {
   margin: 10px 0 0;
   padding: clamp(6px, 1vw, 8px) clamp(8px, 1.5vw, 10px);

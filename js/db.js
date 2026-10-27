@@ -1,7 +1,7 @@
 // ===== 데이터 저장 =====
 // IndexedDB(가마·소성·기록)와 localStorage(간단한 기억값) 접근은 이 파일에서만 함
 
-import { DB_NAME, DB_VERSION, LEGACY_KEY_KILNS, LEGACY_KEY_LAST } from './config.js?v=0.3.21';
+import { DB_NAME, DB_VERSION, LEGACY_KEY_KILNS, LEGACY_KEY_LAST } from './config.js?v=0.3.28';
 
 const OPEN_TIMEOUT_MS = 8000; // 일부 iOS 버전에서 open 요청이 응답 없이 멈추는 경우 대비
 
@@ -246,6 +246,32 @@ export async function deleteFiring(firingId) {
 // 온도 기록 저장
 export function saveReading(reading) {
   return run('readings', 'readwrite', (store) => store.add(reading)).then(() => reading);
+}
+
+export function getAllReadings() {
+  return run('readings', 'readonly', (store) => store.getAll()).then((list) => list || []);
+}
+
+function writeAll(storeName, records) {
+  return openDb().then((db) => new Promise((resolve, reject) => {
+    let tx;
+    try {
+      tx = db.transaction(storeName, 'readwrite');
+    } catch (e) {
+      reject(new Error('저장소 작업을 시작하지 못했습니다. (' + e.name + ')'));
+      return;
+    }
+    const store = tx.objectStore(storeName);
+    records.forEach((record) => store.put(record));
+    tx.oncomplete = () => resolve(records.length);
+    tx.onerror = () => reject(new Error('저장소 작업에 실패했습니다. (' + (tx.error && tx.error.name) + ')'));
+    tx.onabort = () => reject(new Error('저장소 작업이 취소되었습니다.'));
+  }));
+}
+
+export function putRecords(storeName, records) {
+  if (!records || !records.length) return Promise.resolve(0);
+  return writeAll(storeName, records);
 }
 
 // 소성의 온도 기록 조회 (시각순 정렬)
