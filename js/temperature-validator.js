@@ -7,7 +7,7 @@
 import {
   TEMP_MIN, TEMP_MAX, VALID_RATE_DEG_PER_SEC, VALID_MIN_DELTA, VALID_MAX_DELTA,
   VALID_INIT_CONFIRM_COUNT, VALID_RECHECK_COUNT, VALID_CANDIDATE_TOLERANCE, VALID_HISTORY_SIZE
-} from './config.js?v=0.3.31';
+} from './config.js?v=0.3.33';
 
 /**
  * 검증 상태 (phase)
@@ -29,6 +29,19 @@ export function allowedDelta(elapsedMs) {
 
 function isTemp(v) {
   return typeof v === 'number' && isFinite(v) && v >= TEMP_MIN && v <= TEMP_MAX;
+}
+
+// 기준이 63인데 863처럼 앞자리가 하나 더 있는 값이 반복되면, 잘린 앞자리로 본다.
+// 차이는 100°C 이상이고 끝자리는 기준과 ±오차 안이어야 한다. 8→28 같은 실제 상승은 해당하지 않음.
+function lostLeadingDigit(baseline, raw) {
+  const b = Math.round(baseline);
+  const r = Math.round(raw);
+  if (!(b >= 0 && r - b >= 100)) return false;
+  const bText = String(Math.abs(b));
+  const rText = String(Math.abs(r));
+  if (rText.length !== bText.length + 1) return false;
+  const suffix = r % Math.pow(10, bText.length);
+  return Math.abs(suffix - b) <= VALID_CANDIDATE_TOLERANCE;
 }
 
 function suspectMessage(from, to, count, persistent) {
@@ -91,14 +104,25 @@ export function validateReading(prev, input) {
     status = 'normal';
     validatedTemp = raw;
   } else {
-    // 허용 범위를 넘는 변화: 이상치 후보. 같은 값(±오차)이 이어지면 횟수를 세지만 기준은 바꾸지 않음
+    // 허용 범위를 넘는 변화: 이상치 후보. 같은 값(±오차)이 이어져도 기준은 그대로 둔다.
+    // 다만 63 뒤에 863처럼 앞자리 하나만 더 있는 값이 반복되면, 잘린 앞자리를 기준으로 바꾼다.
     const last = candidates[candidates.length - 1];
     candidates = (phase === 'suspect' && last && Math.abs(raw - last.temp) <= VALID_CANDIDATE_TOLERANCE)
       ? candidates.concat([{ temp: raw, at }])
       : [{ temp: raw, at }];
-    phase = 'suspect';
-    status = 'suspect';
-    reason = suspectMessage(baseline.temp, raw, candidates.length, candidates.length > VALID_RECHECK_COUNT);
+    const recovered = candidates.length >= VALID_INIT_CONFIRM_COUNT
+      && candidates.every((c) => lostLeadingDigit(baseline.temp, c.temp));
+    if (recovered) {
+      phase = 'normal';
+      baseline = { temp: raw, at };
+      candidates = [];
+      status = 'normal';
+      validatedTemp = raw;
+    } else {
+      phase = 'suspect';
+      status = 'suspect';
+      reason = suspectMessage(baseline.temp, raw, candidates.length, candidates.length > VALID_RECHECK_COUNT);
+    }
   }
 
   const persistent = phase === 'suspect' && candidates.length > VALID_RECHECK_COUNT;

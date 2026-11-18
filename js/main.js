@@ -1,21 +1,21 @@
 // ===== 진입점 =====
 // 화면 요소를 찾아 각 모듈을 연결하고, 탭 전환과 이벤트 처리를 담당
 
-import { APP_VERSION, PREVIEW_INTERVAL_MS, LIVE_READ_MS, CAMERA_IDEAL_W, CAMERA_IDEAL_H, OCR_LOCK_REVISION } from './config.js?v=0.3.31';
-import { initDb } from './db.js?v=0.3.31';
-import { createCamera } from './camera.js?v=0.3.31';
-import { createRoiEditor, kilnSourceRegion, frameAspectRelation } from './roi.js?v=0.3.31';
-import { markTiming, timingText } from './timings.js?v=0.3.31';
-import { createKilnManager } from './kilns.js?v=0.3.31';
-import { createReader, createLiveDisplay, recognitionMode, isRecognitionReady } from './reading.js?v=0.3.31';
-import { formatTemp } from './ocr.js?v=0.3.31';
-import { createOcrEngine } from './ocr.js?v=0.3.31';
-import { createOcrPreprocessor } from './ocrPreprocess.js?v=0.3.31';
-import { createCalibrationPanel } from './calibration.js?v=0.3.31';
-import { segmentQuads } from './recognizer.js?v=0.3.31';
-import { createRecorder } from './recorder.js?v=0.3.31';
-import { createHistoryView } from './history.js?v=0.3.31';
-import { exportArchive, parseArchive, importArchive } from './backup.js?v=0.3.31';
+import { APP_VERSION, PREVIEW_INTERVAL_MS, LIVE_READ_MS, CAMERA_IDEAL_W, CAMERA_IDEAL_H, OCR_LOCK_REVISION, START_STABLE_COUNT } from './config.js?v=0.3.33';
+import { initDb } from './db.js?v=0.3.33';
+import { createCamera } from './camera.js?v=0.3.33';
+import { createRoiEditor, kilnSourceRegion, frameAspectRelation } from './roi.js?v=0.3.33';
+import { markTiming, timingText } from './timings.js?v=0.3.33';
+import { createKilnManager } from './kilns.js?v=0.3.33';
+import { createReader, createLiveDisplay, recognitionMode } from './reading.js?v=0.3.33';
+import { formatTemp } from './ocr.js?v=0.3.33';
+import { createOcrEngine } from './ocr.js?v=0.3.33';
+import { createOcrPreprocessor } from './ocrPreprocess.js?v=0.3.33';
+import { createCalibrationPanel } from './calibration.js?v=0.3.33';
+import { segmentQuads } from './recognizer.js?v=0.3.33';
+import { createRecorder } from './recorder.js?v=0.3.33';
+import { createHistoryView } from './history.js?v=0.3.33';
+import { exportArchive, parseArchive, importArchive } from './backup.js?v=0.3.33';
 
 const TABS = ['record', 'history'];
 
@@ -415,6 +415,34 @@ function startApp() {
 
   let recognitionReady = false;
   let readyAnnounced = false;
+  let startStreakTemp = null;
+  let startStreakCount = 0;
+
+  function updateStartStreak(res) {
+    const temp = res && res.ok && typeof res.temp === 'number' ? res.temp : null;
+    if (temp == null) {
+      startStreakTemp = null;
+      startStreakCount = 0;
+      return;
+    }
+    if (temp === startStreakTemp) startStreakCount += 1;
+    else {
+      startStreakTemp = temp;
+      startStreakCount = 1;
+    }
+  }
+
+  function acceptStartTemperature(res) {
+    if (recorder.isActive() || startStreakCount < START_STABLE_COUNT || startStreakTemp == null) return;
+    reader.lockBaseline(startStreakTemp);
+    if (!res.validation) return;
+    res.validation.status = 'normal';
+    res.validation.validatedTemp = startStreakTemp;
+    res.validation.reason = '';
+    res.validation.warning = '';
+    res.validation.persistent = false;
+    res.validation.baselineTemp = startStreakTemp;
+  }
 
   function canStartFiring() {
     const k = kilns.current();
@@ -424,6 +452,8 @@ function startApp() {
   function clearRecognitionReady() {
     recognitionReady = false;
     readyAnnounced = false;
+    startStreakTemp = null;
+    startStreakCount = 0;
     if (els.readyDialog) els.readyDialog.hidden = true;
     updateStartButton();
     updateVerifyNotice();
@@ -433,6 +463,9 @@ function startApp() {
     if (res && res.status === 'engineLoading') return '인식 엔진을 준비하고 있습니다';
     if (res && res.status === 'waiting') return '영상을 준비하고 있습니다';
     const v = res && res.validation;
+    if (startStreakCount > 0 && startStreakTemp != null && startStreakCount < START_STABLE_COUNT) {
+      return formatTemp(startStreakTemp) + '°C를 확인하고 있습니다 (' + startStreakCount + '/' + START_STABLE_COUNT + ')';
+    }
     if (v && v.status === 'initializing') return '같은 온도인지 다시 확인하고 있습니다';
     const seen = res && (typeof res.temp === 'number' ? res.temp : (typeof res.candidate === 'number' ? res.candidate : null));
     if (seen != null) return formatTemp(seen) + '°C를 확인하고 있습니다';
@@ -517,6 +550,8 @@ function startApp() {
   // 판독 결과를 현재 인식값·보정 패널·영상 위 샘플 위치(7세그먼트 보정 중일 때만)에 반영
   function handleReading(res) {
     const k = kilns.current();
+    updateStartStreak(res);
+    acceptStartTemperature(res);
     live.show(res);
     calib.show(res);
     if (els.calib.ocrModel) els.calib.ocrModel.textContent = res.model || '—';
@@ -525,12 +560,16 @@ function startApp() {
     }
     updateTimingView();
 
-    const ready = isRecognitionReady(res);
+    const ready = !recorder.isActive() && startStreakCount >= START_STABLE_COUNT;
     const becameReady = ready && !recognitionReady;
     recognitionReady = ready;
+    if (!ready) {
+      readyAnnounced = false;
+      if (els.readyDialog) els.readyDialog.hidden = true;
+    }
     if (becameReady && !recorder.isActive() && !readyAnnounced) {
       readyAnnounced = true;
-      showReadyDialog(res.validation.validatedTemp);
+      showReadyDialog(startStreakTemp);
     }
     if (!recorder.isActive()) updateStartButton();
     updateVerifyNotice(res);

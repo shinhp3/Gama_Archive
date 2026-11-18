@@ -1,6 +1,6 @@
 // ===== 앱 전체에서 쓰는 상수 =====
 
-export const APP_VERSION = 'v0.3.31';
+export const APP_VERSION = 'v0.3.33';
 
 // ===== 저장소 =====
 export const DB_NAME = 'kiln-recorder';
@@ -65,6 +65,7 @@ export const VALID_RATE_DEG_PER_SEC = 4;
 export const VALID_MIN_DELTA = 10;            // 판독 간격이 아주 짧아도 이만큼은 허용 (표시 흔들림)
 export const VALID_MAX_DELTA = 300;           // 판독이 오래 끊겼다가 다시 읽어도 이보다 큰 변화는 이상치 후보
 export const VALID_INIT_CONFIRM_COUNT = 2;    // 처음에 서로 이어지는 판독이 이만큼 모이면 바로 기준 온도로 확정
+export const START_STABLE_COUNT = 3;          // 소성 시작은 같은 온도가 연속으로 이만큼 읽혀야 가능
 export const CONFIRM_INTERVAL_MS = 1000;      // 기준이 잡히기 전에는 판독 주기(기본 5초)를 기다리지 않음
 export const VALID_RECHECK_COUNT = 2;         // 급변값이 이후 이만큼 더 반복되면 "급변 지속" 경고 (기준은 그대로)
 export const VALID_CANDIDATE_TOLERANCE = 10;  // 급변 후보끼리 같은 값으로 볼 오차 (±°C)

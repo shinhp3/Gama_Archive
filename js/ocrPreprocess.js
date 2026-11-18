@@ -5,9 +5,9 @@
 import {
   OCR_TARGET_H, OCR_GRAB_MAX_H, OCR_PAD_RATIO, OCR_CLOSE_RATIO, OCR_THICKEN_RATIO, OCR_SATURATED_R, OCR_SATURATED_GB,
   OCR_VARIANTS, OCR_STABLE_READS, OCR_RESEEK_FAILS, OCR_MIN_CONTENT_H, OCR_FRAGMENT_WIDTH
-} from './config.js?v=0.3.31';
-import { otsuThreshold } from './recognizer.js?v=0.3.31';
-import { kilnSourceRegion } from './roi.js?v=0.3.31';
+} from './config.js?v=0.3.33';
+import { otsuThreshold } from './recognizer.js?v=0.3.33';
+import { kilnSourceRegion } from './roi.js?v=0.3.33';
 
 // 전처리 방식 이름 (판독 보정 화면 표시용)
 export const VARIANT_LABELS = {
@@ -162,7 +162,17 @@ function boxCropped(box, W, H) {
   return !!box && !box.keptFull && (box.w < W - 1 || box.h < H - 1);
 }
 
+// 좁은 범위가 넓은 범위의 왼쪽이나 오른쪽을 한 자리만큼 잘라 냈으면 참.
+// 863의 8처럼 한쪽 채널에서만 흐린 맨 앞자리를 버리는 경우를 가린다.
+function dropsSideDigit(narrow, wider) {
+  const digit = Math.max(6, Math.round(Math.max(narrow.h, wider.h) * 0.35));
+  const left = narrow.x - wider.x;
+  const right = (wider.x + wider.w) - (narrow.x + narrow.w);
+  return left >= digit || right >= digit;
+}
+
 // 회색으로 획이 안 보이면 빨강 점수의 범위를 쓴다. 어두운 LCD는 회색 범위를 유지한다.
+// 둘 다 숫자를 찾았는데 한쪽이 옆자리를 잘라 냈으면 더 넓은 쪽을 쓴다.
 export function chooseContentBox(gray, red, W, H) {
   const grayBox = contentBounds(gray, W, H);
   const redBox = contentBounds(red, W, H);
@@ -170,7 +180,11 @@ export function chooseContentBox(gray, red, W, H) {
   const redOn = boxCropped(redBox, W, H);
   if (redOn && !grayOn) return redBox;
   if (grayOn && !redOn) return grayBox;
-  if (redOn && grayOn && redBox.w * redBox.h < grayBox.w * grayBox.h * 0.9) return redBox;
+  if (redOn && grayOn) {
+    if (dropsSideDigit(redBox, grayBox)) return grayBox;
+    if (dropsSideDigit(grayBox, redBox)) return redBox;
+    if (redBox.w * redBox.h < grayBox.w * grayBox.h * 0.9) return redBox;
+  }
   return grayBox;
 }
 
