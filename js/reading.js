@@ -3,14 +3,15 @@
 // OCR은 오래 걸리므로 한 번에 하나만 실행하고, 가마·설정이 바뀌거나 카메라가 꺼진 뒤 늦게 끝난 결과는 버림
 
 import {
-  READ_MAX_W, CONF_HIGH, CONF_LOW, FRAME_SETTLE_MS, OCR_STABLE_READS, OCR_LANG, CONFIRM_INTERVAL_MS
-} from './config.js?v=0.3.34';
-import { markTiming } from './timings.js?v=0.3.34';
-import { createValidatorState, validateReading } from './temperature-validator.js?v=0.3.34';
-import { kilnSourceRegion, frameBlockReason } from './roi.js?v=0.3.34';
-import { recognize } from './recognizer.js?v=0.3.34';
-import { judgeOcr, formatTemp } from './ocr.js?v=0.3.34';
-import { variantOrder, advanceVariantLock, VARIANT_LABELS } from './ocrPreprocess.js?v=0.3.34';
+  READ_MAX_W, CONF_HIGH, CONF_LOW, FRAME_SETTLE_MS, OCR_STABLE_READS, OCR_LANG, CONFIRM_INTERVAL_MS,
+  START_CONFIRM_INTERVAL_MS, START_STABLE_TOLERANCE
+} from './config.js?v=0.3.35';
+import { markTiming } from './timings.js?v=0.3.35';
+import { createValidatorState, validateReading } from './temperature-validator.js?v=0.3.35';
+import { kilnSourceRegion, frameBlockReason } from './roi.js?v=0.3.35';
+import { recognize } from './recognizer.js?v=0.3.35';
+import { judgeOcr, formatTemp } from './ocr.js?v=0.3.35';
+import { variantOrder, advanceVariantLock, VARIANT_LABELS } from './ocrPreprocess.js?v=0.3.35';
 
 export const ENGINE_LABELS = { ocr: 'OCR', sevenSegment: '7세그먼트' };
 
@@ -220,6 +221,18 @@ export function createReader(deps) {
             multiple: !!one.multiple,
             text: one.text
           });
+          // 세 자리가 두 전처리에서 같으면 나머지를 기다리지 않음. 세 번째까지 봤는데 세 자리가 하나뿐이면 이진화까지는 가지 않음
+          if (!manual && !lockedVariant) {
+            const full = attempts.filter((a) => a.ok && parseInt(a.text, 10) >= 100);
+            const distinct = [];
+            full.forEach((a) => { if (distinct.indexOf(a.text) < 0) distinct.push(a.text); });
+            const kept = distinct.filter((short) => !distinct.some((long) => (
+              long !== short && long.length === short.length + 1 && long.endsWith(short) &&
+              parseInt(long, 10) - parseInt(short, 10) >= 100
+            )));
+            const hits = kept.length === 1 ? full.filter((a) => a.text === kept[0]).length : 0;
+            if (hits >= 2 || (i >= 2 && hits >= 1)) break;
+          }
         }
         if (gen === generation && judged.length) {
           result = judged[judged.length - 1];
@@ -344,7 +357,9 @@ export function createReader(deps) {
     }
     if (st !== 'ready' || busy) return;
     const phase = (validators.get(k.id) || {}).phase;
-    const wait = phase === 'normal' || phase === 'suspect' ? k.readIntervalSec * 1000 : CONFIRM_INTERVAL_MS;
+    const fast = typeof deps.confirming === 'function' && deps.confirming();
+    const wait = fast ? START_CONFIRM_INTERVAL_MS
+      : (phase === 'normal' || phase === 'suspect' ? k.readIntervalSec * 1000 : CONFIRM_INTERVAL_MS);
     if (Date.now() - lastStartAt < wait) return;
     runOcr(k);
   }
@@ -382,6 +397,22 @@ export function createReader(deps) {
 export function isRecognitionReady(res) {
   const v = res && res.validation;
   return !!(res && res.ok && !res.lowQuality && v && v.status === 'normal' && typeof v.validatedTemp === 'number');
+}
+
+// 소성 시작 횟수. 못 읽거나 범위 밖 숫자가 한 번 끼어도 횟수를 지우지 않는다.
+// 두 번 연속으로 벗어나면 그 새 온도부터 다시 센다.
+export function nextStartStreak(prev, temp, tolerance) {
+  const allow = typeof tolerance === 'number' ? tolerance : START_STABLE_TOLERANCE;
+  const s = prev || { anchor: null, temp: null, count: 0, misses: 0 };
+  if (typeof temp !== 'number') {
+    if (s.count > 0 && s.misses < 1) return { anchor: s.anchor, temp: s.temp, count: s.count, misses: s.misses + 1 };
+    return { anchor: null, temp: null, count: 0, misses: 0 };
+  }
+  if (s.anchor != null && Math.abs(temp - s.anchor) <= allow) {
+    return { anchor: s.anchor, temp: temp, count: s.count + 1, misses: 0 };
+  }
+  if (s.count > 0 && s.misses < 1) return { anchor: s.anchor, temp: s.temp, count: s.count, misses: s.misses + 1 };
+  return { anchor: temp, temp: temp, count: 1, misses: 0 };
 }
 
 // 검증 상태 표시 문구

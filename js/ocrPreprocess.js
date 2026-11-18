@@ -5,9 +5,9 @@
 import {
   OCR_TARGET_H, OCR_GRAB_MAX_H, OCR_PAD_RATIO, OCR_CLOSE_RATIO, OCR_THICKEN_RATIO, OCR_SATURATED_R, OCR_SATURATED_GB,
   OCR_VARIANTS, OCR_STABLE_READS, OCR_RESEEK_FAILS, OCR_MIN_CONTENT_H, OCR_FRAGMENT_WIDTH
-} from './config.js?v=0.3.34';
-import { otsuThreshold } from './recognizer.js?v=0.3.34';
-import { kilnSourceRegion } from './roi.js?v=0.3.34';
+} from './config.js?v=0.3.35';
+import { otsuThreshold } from './recognizer.js?v=0.3.35';
+import { kilnSourceRegion } from './roi.js?v=0.3.35';
 
 // 전처리 방식 이름 (판독 보정 화면 표시용)
 export const VARIANT_LABELS = {
@@ -24,6 +24,15 @@ export function allOcrVariants() {
 }
 
 function clamp(v, min, max) { return Math.min(max, Math.max(min, v)); }
+
+// 63과 863이 같이 나오면 63은 앞자리가 빠진 값이다. 긴 숫자만 남긴다.
+function withoutTruncated(texts) {
+  return texts.filter((short) => !texts.some((long) => {
+    if (long === short || long.length !== short.length + 1) return false;
+    if (!/^\d+$/.test(short) || !/^\d+$/.test(long) || !long.endsWith(short)) return false;
+    return parseInt(long, 10) - parseInt(short, 10) >= 100;
+  }));
+}
 
 // OCR에 넘길 전처리 순서.
 // 수동 선택이면 그 방식만. 자동에서 유지 중인 방식이 있으면 그것만. 아니면 후보 전체(탐색).
@@ -65,15 +74,17 @@ export function advanceVariantLock(prev, attempts, lockedVariant, options) {
     return { state: { pending, failStreak }, action: 'fail', variant: lockedVariant, text: '', count: 0 };
   }
 
-  const texts = [];
-  oks.forEach((a) => { if (texts.indexOf(a.text) < 0) texts.push(a.text); });
-  // 한 프레임에서 전처리끼리 숫자가 다르면 어느 쪽도 정답으로 고정하지 않음
+  const rawTexts = [];
+  oks.forEach((a) => { if (rawTexts.indexOf(a.text) < 0) rawTexts.push(a.text); });
+  const texts = withoutTruncated(rawTexts);
+  const agreed = texts.length === 1 ? oks.filter((a) => a.text === texts[0]) : oks;
+  // 한 프레임에서 전처리끼리 숫자가 다르면 어느 쪽도 정답으로 고정하지 않음. 앞자리만 빠진 짧은 숫자는 빼고 본다.
   if (texts.length >= 2) {
     return { state: { pending: {}, failStreak: 0 }, action: 'conflict', variant: null, text: '', count: 0, blocked: false };
   }
 
   const seen = {};
-  oks.forEach((a) => {
+  agreed.forEach((a) => {
     const before = pending[a.variant];
     const count = before && before.text === a.text ? before.count + 1 : 1;
     pending[a.variant] = { text: a.text, count, confidence: a.confidence || 0 };
@@ -333,6 +344,35 @@ export function contentBounds(gray, W, H) {
   right = expandSmall(right, 1, countCol);
   top = expandSmall(top, -1, countRow);
   bottom = expandSmall(bottom, 1, countRow);
+  // 자리 사이 빈칸 때문에 흐린 맨 앞자리(863의 8)가 잘리지 않게, 한 자리 너비 안의 흐린 획까지 포함한다
+  const gapLimit = Math.max(3, Math.round((bottom - top) * 0.45));
+  function extendFaint(edge, step) {
+    let x = edge;
+    let gap = 0;
+    let found = edge;
+    let entered = false;
+    while (gap <= gapLimit) {
+      const n = x + step;
+      if (n < 0 || n >= W) break;
+      let c = 0;
+      for (let y = top; y <= bottom; y++) {
+        if (Math.abs(gray[y * W + n] - bg) >= 12) c++;
+      }
+      if (c >= 2) {
+        found = n;
+        entered = true;
+        gap = 0;
+      } else if (entered) {
+        break;
+      } else {
+        gap += 1;
+      }
+      x = n;
+    }
+    return found;
+  }
+  left = extendFaint(left, -1);
+  right = extendFaint(right, 1);
   const ch = bottom - top + 1;
   const cw = right - left + 1;
   if (ch < 8 || cw < 8) return { x: 0, y: 0, w: W, h: H, keptFull: true };

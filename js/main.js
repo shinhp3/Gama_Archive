@@ -1,21 +1,21 @@
 // ===== 진입점 =====
 // 화면 요소를 찾아 각 모듈을 연결하고, 탭 전환과 이벤트 처리를 담당
 
-import { APP_VERSION, PREVIEW_INTERVAL_MS, LIVE_READ_MS, CAMERA_IDEAL_W, CAMERA_IDEAL_H, OCR_LOCK_REVISION, START_STABLE_COUNT, START_STABLE_TOLERANCE } from './config.js?v=0.3.34';
-import { initDb } from './db.js?v=0.3.34';
-import { createCamera } from './camera.js?v=0.3.34';
-import { createRoiEditor, kilnSourceRegion, frameAspectRelation } from './roi.js?v=0.3.34';
-import { markTiming, timingText } from './timings.js?v=0.3.34';
-import { createKilnManager } from './kilns.js?v=0.3.34';
-import { createReader, createLiveDisplay, recognitionMode } from './reading.js?v=0.3.34';
-import { formatTemp } from './ocr.js?v=0.3.34';
-import { createOcrEngine } from './ocr.js?v=0.3.34';
-import { createOcrPreprocessor } from './ocrPreprocess.js?v=0.3.34';
-import { createCalibrationPanel } from './calibration.js?v=0.3.34';
-import { segmentQuads } from './recognizer.js?v=0.3.34';
-import { createRecorder } from './recorder.js?v=0.3.34';
-import { createHistoryView } from './history.js?v=0.3.34';
-import { exportArchive, parseArchive, importArchive } from './backup.js?v=0.3.34';
+import { APP_VERSION, PREVIEW_INTERVAL_MS, LIVE_READ_MS, CAMERA_IDEAL_W, CAMERA_IDEAL_H, OCR_LOCK_REVISION, START_STABLE_COUNT, START_STABLE_TOLERANCE } from './config.js?v=0.3.35';
+import { initDb } from './db.js?v=0.3.35';
+import { createCamera } from './camera.js?v=0.3.35';
+import { createRoiEditor, kilnSourceRegion, frameAspectRelation } from './roi.js?v=0.3.35';
+import { markTiming, timingText } from './timings.js?v=0.3.35';
+import { createKilnManager } from './kilns.js?v=0.3.35';
+import { createReader, createLiveDisplay, recognitionMode, nextStartStreak } from './reading.js?v=0.3.35';
+import { formatTemp } from './ocr.js?v=0.3.35';
+import { createOcrEngine } from './ocr.js?v=0.3.35';
+import { createOcrPreprocessor } from './ocrPreprocess.js?v=0.3.35';
+import { createCalibrationPanel } from './calibration.js?v=0.3.35';
+import { segmentQuads } from './recognizer.js?v=0.3.35';
+import { createRecorder } from './recorder.js?v=0.3.35';
+import { createHistoryView } from './history.js?v=0.3.35';
+import { exportArchive, parseArchive, importArchive } from './backup.js?v=0.3.35';
 
 const TABS = ['record', 'history'];
 
@@ -250,6 +250,7 @@ function startApp() {
     ocr,
     preprocessor: createOcrPreprocessor(camera),
     getKiln: () => kilns.current(),
+    confirming: () => !recorder.isActive() && !recognitionReady,
     onResult: handleReading,
     onActivity: updateActivity,
     onLockVariant: (variant) => {
@@ -415,38 +416,29 @@ function startApp() {
 
   let recognitionReady = false;
   let readyAnnounced = false;
-  let startAnchor = null;
-  let startStreakTemp = null;
-  let startStreakCount = 0;
+  let startStreak = { anchor: null, temp: null, count: 0, misses: 0 };
+
+  function startReadTemp(res) {
+    if (!res || res.multiple || res.preprocessState === 'conflict') return null;
+    if (res.ok && typeof res.temp === 'number') return res.temp;
+    if (!res.lowQuality && typeof res.candidate === 'number') return res.candidate;
+    return null;
+  }
 
   function updateStartStreak(res) {
-    const temp = res && res.ok && typeof res.temp === 'number' ? res.temp : null;
-    if (temp == null) {
-      startAnchor = null;
-      startStreakTemp = null;
-      startStreakCount = 0;
-      return;
-    }
-    if (startAnchor != null && Math.abs(temp - startAnchor) <= START_STABLE_TOLERANCE) {
-      startStreakTemp = temp;
-      startStreakCount += 1;
-      return;
-    }
-    startAnchor = temp;
-    startStreakTemp = temp;
-    startStreakCount = 1;
+    startStreak = nextStartStreak(startStreak, startReadTemp(res), START_STABLE_TOLERANCE);
   }
 
   function acceptStartTemperature(res) {
-    if (recorder.isActive() || startStreakCount < START_STABLE_COUNT || startStreakTemp == null) return;
-    reader.lockBaseline(startStreakTemp);
+    if (recorder.isActive() || startStreak.count < START_STABLE_COUNT || startStreak.temp == null) return;
+    reader.lockBaseline(startStreak.temp);
     if (!res.validation) return;
     res.validation.status = 'normal';
-    res.validation.validatedTemp = startStreakTemp;
+    res.validation.validatedTemp = startStreak.temp;
     res.validation.reason = '';
     res.validation.warning = '';
     res.validation.persistent = false;
-    res.validation.baselineTemp = startStreakTemp;
+    res.validation.baselineTemp = startStreak.temp;
   }
 
   function canStartFiring() {
@@ -457,9 +449,7 @@ function startApp() {
   function clearRecognitionReady() {
     recognitionReady = false;
     readyAnnounced = false;
-    startAnchor = null;
-    startStreakTemp = null;
-    startStreakCount = 0;
+    startStreak = { anchor: null, temp: null, count: 0, misses: 0 };
     if (els.readyDialog) els.readyDialog.hidden = true;
     updateStartButton();
     updateVerifyNotice();
@@ -469,8 +459,8 @@ function startApp() {
     if (res && res.status === 'engineLoading') return '인식 엔진을 준비하고 있습니다';
     if (res && res.status === 'waiting') return '영상을 준비하고 있습니다';
     const v = res && res.validation;
-    if (startStreakCount > 0 && startStreakTemp != null && startStreakCount < START_STABLE_COUNT) {
-      return formatTemp(startStreakTemp) + '°C를 확인하고 있습니다 (' + startStreakCount + '/' + START_STABLE_COUNT + ')';
+    if (startStreak.count > 0 && startStreak.temp != null && startStreak.count < START_STABLE_COUNT) {
+      return formatTemp(startStreak.temp) + '°C를 확인하고 있습니다 (' + startStreak.count + '/' + START_STABLE_COUNT + ')';
     }
     if (v && v.status === 'initializing') return '같은 온도인지 다시 확인하고 있습니다';
     const seen = res && (typeof res.temp === 'number' ? res.temp : (typeof res.candidate === 'number' ? res.candidate : null));
@@ -566,7 +556,7 @@ function startApp() {
     }
     updateTimingView();
 
-    const ready = !recorder.isActive() && startStreakCount >= START_STABLE_COUNT;
+    const ready = !recorder.isActive() && startStreak.count >= START_STABLE_COUNT;
     const becameReady = ready && !recognitionReady;
     recognitionReady = ready;
     if (!ready) {
@@ -575,7 +565,7 @@ function startApp() {
     }
     if (becameReady && !recorder.isActive() && !readyAnnounced) {
       readyAnnounced = true;
-      showReadyDialog(startStreakTemp);
+      showReadyDialog(startStreak.temp);
     }
     if (!recorder.isActive()) updateStartButton();
     updateVerifyNotice(res);
