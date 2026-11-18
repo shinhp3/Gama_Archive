@@ -4,13 +4,13 @@
 
 import {
   READ_MAX_W, CONF_HIGH, CONF_LOW, FRAME_SETTLE_MS, OCR_STABLE_READS, OCR_LANG, CONFIRM_INTERVAL_MS
-} from './config.js?v=0.3.33';
-import { markTiming } from './timings.js?v=0.3.33';
-import { createValidatorState, validateReading } from './temperature-validator.js?v=0.3.33';
-import { kilnSourceRegion, frameBlockReason } from './roi.js?v=0.3.33';
-import { recognize } from './recognizer.js?v=0.3.33';
-import { judgeOcr, formatTemp } from './ocr.js?v=0.3.33';
-import { variantOrder, advanceVariantLock, VARIANT_LABELS } from './ocrPreprocess.js?v=0.3.33';
+} from './config.js?v=0.3.34';
+import { markTiming } from './timings.js?v=0.3.34';
+import { createValidatorState, validateReading } from './temperature-validator.js?v=0.3.34';
+import { kilnSourceRegion, frameBlockReason } from './roi.js?v=0.3.34';
+import { recognize } from './recognizer.js?v=0.3.34';
+import { judgeOcr, formatTemp } from './ocr.js?v=0.3.34';
+import { variantOrder, advanceVariantLock, VARIANT_LABELS } from './ocrPreprocess.js?v=0.3.34';
 
 export const ENGINE_LABELS = { ocr: 'OCR', sevenSegment: '7세그먼트' };
 

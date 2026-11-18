@@ -1,21 +1,21 @@
 // ===== 진입점 =====
 // 화면 요소를 찾아 각 모듈을 연결하고, 탭 전환과 이벤트 처리를 담당
 
-import { APP_VERSION, PREVIEW_INTERVAL_MS, LIVE_READ_MS, CAMERA_IDEAL_W, CAMERA_IDEAL_H, OCR_LOCK_REVISION, START_STABLE_COUNT } from './config.js?v=0.3.33';
-import { initDb } from './db.js?v=0.3.33';
-import { createCamera } from './camera.js?v=0.3.33';
-import { createRoiEditor, kilnSourceRegion, frameAspectRelation } from './roi.js?v=0.3.33';
-import { markTiming, timingText } from './timings.js?v=0.3.33';
-import { createKilnManager } from './kilns.js?v=0.3.33';
-import { createReader, createLiveDisplay, recognitionMode } from './reading.js?v=0.3.33';
-import { formatTemp } from './ocr.js?v=0.3.33';
-import { createOcrEngine } from './ocr.js?v=0.3.33';
-import { createOcrPreprocessor } from './ocrPreprocess.js?v=0.3.33';
-import { createCalibrationPanel } from './calibration.js?v=0.3.33';
-import { segmentQuads } from './recognizer.js?v=0.3.33';
-import { createRecorder } from './recorder.js?v=0.3.33';
-import { createHistoryView } from './history.js?v=0.3.33';
-import { exportArchive, parseArchive, importArchive } from './backup.js?v=0.3.33';
+import { APP_VERSION, PREVIEW_INTERVAL_MS, LIVE_READ_MS, CAMERA_IDEAL_W, CAMERA_IDEAL_H, OCR_LOCK_REVISION, START_STABLE_COUNT, START_STABLE_TOLERANCE } from './config.js?v=0.3.34';
+import { initDb } from './db.js?v=0.3.34';
+import { createCamera } from './camera.js?v=0.3.34';
+import { createRoiEditor, kilnSourceRegion, frameAspectRelation } from './roi.js?v=0.3.34';
+import { markTiming, timingText } from './timings.js?v=0.3.34';
+import { createKilnManager } from './kilns.js?v=0.3.34';
+import { createReader, createLiveDisplay, recognitionMode } from './reading.js?v=0.3.34';
+import { formatTemp } from './ocr.js?v=0.3.34';
+import { createOcrEngine } from './ocr.js?v=0.3.34';
+import { createOcrPreprocessor } from './ocrPreprocess.js?v=0.3.34';
+import { createCalibrationPanel } from './calibration.js?v=0.3.34';
+import { segmentQuads } from './recognizer.js?v=0.3.34';
+import { createRecorder } from './recorder.js?v=0.3.34';
+import { createHistoryView } from './history.js?v=0.3.34';
+import { exportArchive, parseArchive, importArchive } from './backup.js?v=0.3.34';
 
 const TABS = ['record', 'history'];
 
@@ -415,21 +415,26 @@ function startApp() {
 
   let recognitionReady = false;
   let readyAnnounced = false;
+  let startAnchor = null;
   let startStreakTemp = null;
   let startStreakCount = 0;
 
   function updateStartStreak(res) {
     const temp = res && res.ok && typeof res.temp === 'number' ? res.temp : null;
     if (temp == null) {
+      startAnchor = null;
       startStreakTemp = null;
       startStreakCount = 0;
       return;
     }
-    if (temp === startStreakTemp) startStreakCount += 1;
-    else {
+    if (startAnchor != null && Math.abs(temp - startAnchor) <= START_STABLE_TOLERANCE) {
       startStreakTemp = temp;
-      startStreakCount = 1;
+      startStreakCount += 1;
+      return;
     }
+    startAnchor = temp;
+    startStreakTemp = temp;
+    startStreakCount = 1;
   }
 
   function acceptStartTemperature(res) {
@@ -452,6 +457,7 @@ function startApp() {
   function clearRecognitionReady() {
     recognitionReady = false;
     readyAnnounced = false;
+    startAnchor = null;
     startStreakTemp = null;
     startStreakCount = 0;
     if (els.readyDialog) els.readyDialog.hidden = true;
